@@ -4,8 +4,10 @@ import {
   eachDayOfInterval,
   isWeekend,
   isValid,
-  addMonths,
-  subMonths,
+  startOfWeek,
+  endOfWeek,
+  eachWeekOfInterval,
+  addDays,
 } from 'date-fns';
 import { isBusinessDay, isHoliday, getHolidayName } from './business-days';
 
@@ -95,7 +97,104 @@ export function groupCalendarByMonth(days: CalendarDay[]): MonthGroup[] {
 }
 
 /**
- * タスクの開始日・終了日からカレンダー上での位置（startIndex, spanDays）を算出
+ * 週単位のカレンダーデータ構造（A4横向き圧縮用）
+ */
+export interface CalendarWeek {
+  weekIndex: number;
+  startDateStr: string; // 月曜日 '2025-04-07'
+  endDateStr: string;   // 日曜日 '2025-04-13'
+  label: string;        // '4/7週'
+  year: number;
+  month: number;
+}
+
+/**
+ * 開始日〜終了日の週単位配列を生成（月曜日始まり）
+ */
+export function generateCalendarWeeks(startDateStr: string, endDateStr: string): CalendarWeek[] {
+  const start = parseISO(startDateStr);
+  const end = parseISO(endDateStr);
+
+  if (!isValid(start) || !isValid(end) || start > end) {
+    return [];
+  }
+
+  const weekStarts = eachWeekOfInterval(
+    { start, end },
+    { weekStartsOn: 1 } // 月曜日始まり
+  );
+
+  return weekStarts.map((wStart, idx) => {
+    const wEnd = addDays(wStart, 6);
+    return {
+      weekIndex: idx,
+      startDateStr: format(wStart, 'yyyy-MM-dd'),
+      endDateStr: format(wEnd, 'yyyy-MM-dd'),
+      label: `${format(wStart, 'M/d')}週`,
+      year: wStart.getFullYear(),
+      month: wStart.getMonth() + 1,
+    };
+  });
+}
+
+/**
+ * 週単位における月グループ（ヘッダー用）
+ */
+export function groupWeeksByMonth(weeks: CalendarWeek[]): MonthGroup[] {
+  const groups: MonthGroup[] = [];
+  let curGroup: MonthGroup | null = null;
+
+  for (const week of weeks) {
+    if (!curGroup || curGroup.year !== week.year || curGroup.month !== week.month) {
+      curGroup = {
+        year: week.year,
+        month: week.month,
+        label: `${week.year}年${week.month}月`,
+        daysCount: 1, // ここでは週数をカウント
+      };
+      groups.push(curGroup);
+    } else {
+      curGroup.daysCount++;
+    }
+  }
+
+  return groups;
+}
+
+/**
+ * 週単位でのタスクバー位置（leftIndex, span）を算出
+ */
+export function getWeekBarPosition(
+  taskStart: string,
+  taskEnd: string,
+  weeks: CalendarWeek[]
+): { leftIndex: number; span: number; isVisible: boolean } {
+  if (!taskStart || !taskEnd || weeks.length === 0) {
+    return { leftIndex: -1, span: 0, isVisible: false };
+  }
+
+  const firstWeek = weeks[0];
+  const lastWeek = weeks[weeks.length - 1];
+
+  if (taskEnd < firstWeek.startDateStr || taskStart > lastWeek.endDateStr) {
+    return { leftIndex: -1, span: 0, isVisible: false };
+  }
+
+  // 開始日が含まれる週（またはタスク開始より後の最初の週）
+  let leftIndex = weeks.findIndex(w => taskStart <= w.endDateStr);
+  if (leftIndex === -1) leftIndex = 0;
+
+  // 終了日が含まれる週
+  let rightIndex = weeks.findIndex(w => taskEnd <= w.endDateStr);
+  if (rightIndex === -1) rightIndex = weeks.length - 1;
+
+  const span = Math.max(1, rightIndex - leftIndex + 1);
+
+  return { leftIndex, span, isVisible: true };
+}
+
+/**
+ * タスクの開始日・終了日からカレンダー上での位置（startIndex, spanDays）を算出（日単位用）
  */
 export function getBarPosition(
   taskStart: string,
