@@ -1,24 +1,24 @@
 'use server';
 
 import { getCurrentStorageInfo, getMemberRepository } from '@/lib/repositories';
-import { ensureSheetsExist } from '@/lib/google-sheets/sheets-service';
+import { testGoogleSheetsConnection } from '@/lib/google-sheets/client';
 
-export async function fetchSystemInfoAction() {
+export async function fetchSystemInfoAction(): Promise<{
+  isGoogle: boolean;
+  spreadsheetId: string;
+  storageName: string;
+  configured: boolean;
+  sheetsStatus: 'connected' | 'mock' | 'error';
+  errorMessage: string | null;
+}> {
   const info = getCurrentStorageInfo();
-  let sheetsStatus: 'connected' | 'mock' | 'error' = 'mock';
-
-  if (info.isGoogle) {
-    try {
-      const ok = await ensureSheetsExist();
-      sheetsStatus = ok ? 'connected' : 'error';
-    } catch {
-      sheetsStatus = 'error';
-    }
-  }
+  const diag = await testGoogleSheetsConnection();
 
   return {
     ...info,
-    sheetsStatus,
+    configured: diag.configured,
+    sheetsStatus: diag.success ? 'connected' : (diag.configured ? 'error' : 'mock'),
+    errorMessage: diag.error || null,
   };
 }
 

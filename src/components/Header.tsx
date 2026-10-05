@@ -17,6 +17,7 @@ export function Header({ onOpenCreateModal }: HeaderProps) {
     spreadsheetId: string;
     storageName: string;
     sheetsStatus: 'connected' | 'mock' | 'error';
+    errorMessage?: string | null;
   } | null>(null);
 
   useEffect(() => {
@@ -58,17 +59,32 @@ export function Header({ onOpenCreateModal }: HeaderProps) {
           {systemInfo && (
             <div
               className={`hidden sm:flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
-                systemInfo.isGoogle
+                systemInfo.sheetsStatus === 'connected'
                   ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  : systemInfo.sheetsStatus === 'error'
+                  ? 'bg-rose-50 text-rose-700 border-rose-200'
                   : 'bg-amber-50 text-amber-700 border-amber-200'
               }`}
-              title={`保存先: ${systemInfo.storageName} (ID: ${systemInfo.spreadsheetId})`}
+              title={
+                systemInfo.errorMessage
+                  ? `エラー: ${systemInfo.errorMessage}`
+                  : `保存先: ${systemInfo.storageName} (ID: ${systemInfo.spreadsheetId})`
+              }
             >
-              {systemInfo.isGoogle ? (
+              {systemInfo.sheetsStatus === 'connected' ? (
                 <>
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                   <span>Google Sheets 接続中</span>
                 </>
+              ) : systemInfo.sheetsStatus === 'error' ? (
+                <Link
+                  href="/api/sheets-status"
+                  target="_blank"
+                  className="flex items-center space-x-1 hover:underline text-rose-700"
+                >
+                  <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Sheets接続エラー (診断を開く)</span>
+                </Link>
               ) : (
                 <>
                   <Database className="w-3.5 h-3.5 text-amber-600" />
