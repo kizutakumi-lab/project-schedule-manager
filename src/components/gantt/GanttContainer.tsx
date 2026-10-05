@@ -9,7 +9,7 @@ import {
 } from '@/lib/date-utils';
 import { recalculateSchedule } from '@/lib/schedule-engine';
 import { GanttToolbar } from './GanttToolbar';
-import { GanttCalendarHeader } from './GanttCalendarHeader';
+import { GanttCalendarHeader, GridBorderStrength } from './GanttCalendarHeader';
 import { GanttLeftTree } from './GanttLeftTree';
 import { GanttTimeline } from './GanttTimeline';
 import { GanttTodoSection } from '../todo/GanttTodoSection';
@@ -54,6 +54,8 @@ export function GanttContainer({
   const [todos, setTodos] = useState<Todo[]>(initialTodos);
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [dayCellWidth, setDayCellWidth] = useState<number>(36);
+  // 罫線の濃さ設定（デフォルト: くっきり strong）
+  const [borderStrength, setBorderStrength] = useState<GridBorderStrength>('strong');
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [conflictModalOpen, setConflictModalOpen] = useState<boolean>(false);
   const [conflictMessage, setConflictMessage] = useState<string>('');
@@ -73,7 +75,7 @@ export function GanttContainer({
   // スクロール同期用参照
   const timelineScrollRef = useRef<HTMLDivElement>(null);
 
-  // カレンダー日付の範囲を算出（プロジェクト期間と全タスクの期間をすべて包括するよう余裕を持たせる）
+  // カレンダー日付の範囲を算出
   const calendarDays = useMemo(() => {
     let minDate = project.start_date || '2025-04-01';
     let maxDate = project.end_date || '2025-08-31';
@@ -153,9 +155,8 @@ export function GanttContainer({
     return () => clearTimeout(timer);
   }, [handleScrollToToday]);
 
-  // 営業日数のインライン変更ハンドラ（最重要：即座に後続工程を再計算し、バックエンドに保存）
+  // 営業日数のインライン変更ハンドラ
   const handleDurationChange = async (itemId: string, newDuration: number) => {
-    // 1. クライアント側で即座に再計算してUIを更新
     const updatedItems = items.map(item =>
       item.schedule_id === itemId
         ? { ...item, duration_business_days: newDuration }
@@ -164,7 +165,6 @@ export function GanttContainer({
     const recalculated = recalculateSchedule(updatedItems, project.start_date);
     setItems(recalculated);
 
-    // 2. サーバー側（Google Sheets / Mock）に非同期保存
     try {
       setIsSaving(true);
       await updateMultipleScheduleItemsAction(project.project_id, recalculated);
@@ -175,12 +175,45 @@ export function GanttContainer({
     }
   };
 
-  // 工程の編集・新規作成ハンドラ
+  // 工程名の直接インライン変更ハンドラ
+  const handleNameChange = async (itemId: string, newName: string) => {
+    const updatedItems = items.map(item =>
+      item.schedule_id === itemId ? { ...item, name: newName } : item
+    );
+    setItems(updatedItems);
+
+    try {
+      setIsSaving(true);
+      await updateScheduleItemAction(itemId, { name: newName });
+    } catch (err: any) {
+      console.error('Failed to save name:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // 担当者の直接インライン変更ハンドラ
+  const handleAssigneeChange = async (itemId: string, newAssignee: string) => {
+    const updatedItems = items.map(item =>
+      item.schedule_id === itemId ? { ...item, assignee: newAssignee } : item
+    );
+    setItems(updatedItems);
+
+    try {
+      setIsSaving(true);
+      await updateScheduleItemAction(itemId, { assignee: newAssignee });
+    } catch (err: any) {
+      console.error('Failed to save assignee:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // 工程の編集・新規作成ハンドラ（モーダル経由）
   const handleSaveItem = async (data: Partial<ScheduleItem>) => {
     setIsSaving(true);
     try {
       if (editingItem) {
-        // 編集
         const res = await updateScheduleItemAction(
           editingItem.schedule_id,
           data,
@@ -198,7 +231,6 @@ export function GanttContainer({
         const recalculated = recalculateSchedule(updatedItems, project.start_date);
         setItems(recalculated);
       } else {
-        // 新規作成
         const maxSort = items.length > 0 ? Math.max(...items.map(i => i.sort_order || 0)) : 0;
         const newItem: Omit<ScheduleItem, 'created_at' | 'updated_at'> = {
           schedule_id: `item-${Date.now()}`,
@@ -311,7 +343,6 @@ export function GanttContainer({
     nextList[idx] = nextList[targetIdx];
     nextList[targetIdx] = temp;
 
-    // sort_orderの振り直し
     nextList.forEach((item, i) => {
       item.sort_order = i + 1;
     });
@@ -359,9 +390,10 @@ export function GanttContainer({
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-3.5rem)] bg-white overflow-hidden">
-      {/* ツールバー */}
+    <div className="flex flex-col h-screen bg-white overflow-hidden">
+      {/* 統合1行ヘッダーツールバー */}
       <GanttToolbar
+        project={project}
         onAddCategory={() => {
           setEditingItem(null);
           setNewItemParentId(null);
@@ -374,6 +406,8 @@ export function GanttContainer({
         onScrollToToday={handleScrollToToday}
         dayCellWidth={dayCellWidth}
         setDayCellWidth={setDayCellWidth}
+        borderStrength={borderStrength}
+        setBorderStrength={setBorderStrength}
         isSaving={isSaving}
         uncompletedTodoCount={todos.filter(t => t.status === 'open').length}
       />
@@ -400,32 +434,38 @@ export function GanttContainer({
               setIsItemEditOpen(true);
             }}
             onDurationChange={handleDurationChange}
+            onNameChange={handleNameChange}
+            onAssigneeChange={handleAssigneeChange}
             visibleItemIds={visibleItemIds}
+            borderStrength={borderStrength}
           />
         </div>
 
         {/* 右側タイムライン（横スクロール可能） */}
         <div
           ref={timelineScrollRef}
-          className="flex-1 overflow-auto bg-slate-50/30"
+          className="flex-1 overflow-auto bg-slate-50/20"
         >
           {/* カレンダーヘッダー */}
           <GanttCalendarHeader
             calendarDays={calendarDays}
             monthGroups={monthGroups}
             dayCellWidth={dayCellWidth}
+            borderStrength={borderStrength}
           />
 
-          {/* ガントバー */}
+          {/* ガントバー（折りたたみ時は横一列サマリー描画） */}
           <GanttTimeline
             items={items}
             calendarDays={calendarDays}
             dayCellWidth={dayCellWidth}
             visibleItemIds={visibleItemIds}
+            collapsedIds={collapsedIds}
             onEditItem={item => {
               setEditingItem(item);
               setIsItemEditOpen(true);
             }}
+            borderStrength={borderStrength}
           />
 
           {/* 下部担当者別TODO行 */}
@@ -433,6 +473,7 @@ export function GanttContainer({
             todos={todos}
             calendarDays={calendarDays}
             dayCellWidth={dayCellWidth}
+            borderStrength={borderStrength}
             onTodoClick={todo => {
               setEditingTodo(todo);
               setIsTodoEditOpen(true);
