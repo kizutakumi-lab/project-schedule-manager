@@ -31,8 +31,14 @@ export function GanttCalendarHeader({
     bold: 'border-slate-700',
   }[borderStrength];
 
+  const totalDays = calendarDays.length;
+  const headerWidth = totalDays * dayCellWidth;
+
   return (
-    <div className={`sticky top-0 z-20 bg-white border-b-2 ${headerBorderCol} shadow-xs select-none h-[70px] box-border overflow-hidden`}>
+    <div
+      style={{ width: `${headerWidth}px` }}
+      className={`sticky top-0 z-20 bg-white border-b-2 ${headerBorderCol} shadow-xs select-none h-[70px] box-border`}
+    >
       {/* 1行目: 年月 */}
       <div className={`flex border-b ${borderCol} bg-slate-100 text-xs font-bold text-slate-800 h-[26px] box-border`}>
         {monthGroups.map((group, idx) => (
