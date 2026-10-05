@@ -121,94 +121,104 @@ export async function ensureSheetsExist() {
  * 指定シートの全行を取得し、ヘッダー名を基準としたオブジェクト配列に変換して返す
  */
 export async function fetchSheetRows<T extends Record<string, any>>(sheetName: string): Promise<{ data: T[]; headerRow: string[]; rowIndexMap: Map<string, number> }> {
-  const sheets = await getGoogleSheetsClient();
-  if (!sheets) {
+  try {
+    const sheets = await getGoogleSheetsClient();
+    if (!sheets) {
+      return { data: [], headerRow: [], rowIndexMap: new Map() };
+    }
+
+    const spreadsheetId = getSpreadsheetId();
+    await ensureSheetsExist();
+
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${sheetName}!A:Z`,
+    });
+
+    const values = response.data.values || [];
+    if (values.length === 0) {
+      return { data: [], headerRow: [], rowIndexMap: new Map() };
+    }
+
+    const headerRow: string[] = values[0].map(h => String(h).trim());
+    const data: T[] = [];
+    const rowIndexMap = new Map<string, number>(); // ID -> 1-indexed row number in spreadsheet
+
+    const idColIndex = 0; // すべてのシートで1列目が固有ID（project_id, schedule_id, todo_id, member_id）
+
+    for (let i = 1; i < values.length; i++) {
+      const row = values[i];
+      if (!row || row.length === 0) continue;
+
+      const rowObj: any = {};
+      for (let c = 0; c < headerRow.length; c++) {
+        const key = headerRow[c];
+        const val = row[c] !== undefined ? row[c] : '';
+        rowObj[key] = val;
+      }
+
+      // 型の変換（boolean, number）
+      if ('duration_business_days' in rowObj) {
+        rowObj.duration_business_days = Number(rowObj.duration_business_days) || 0;
+      }
+      if ('sort_order' in rowObj) {
+        rowObj.sort_order = Number(rowObj.sort_order) || 0;
+      }
+      if ('buffer_days' in rowObj && rowObj.buffer_days !== '') {
+        rowObj.buffer_days = Number(rowObj.buffer_days) || 0;
+      }
+      if ('auto_schedule' in rowObj) {
+        rowObj.auto_schedule = String(rowObj.auto_schedule).toLowerCase() === 'true' || rowObj.auto_schedule === true || rowObj.auto_schedule === '1';
+      }
+      if ('active' in rowObj) {
+        rowObj.active = String(rowObj.active).toLowerCase() === 'true' || rowObj.active === true || rowObj.active === '1';
+      }
+
+      const id = row[idColIndex];
+      if (id) {
+        rowIndexMap.set(String(id), i + 1); // 1-indexed (A1 is row 1, first data row is 2)
+        data.push(rowObj as T);
+      }
+    }
+
+    return { data, headerRow, rowIndexMap };
+  } catch (error) {
+    console.error(`[GoogleSheets] Error fetching rows for ${sheetName}:`, error);
     return { data: [], headerRow: [], rowIndexMap: new Map() };
   }
-
-  const spreadsheetId = getSpreadsheetId();
-  await ensureSheetsExist();
-
-  const response = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range: `${sheetName}!A:Z`,
-  });
-
-  const values = response.data.values || [];
-  if (values.length === 0) {
-    return { data: [], headerRow: [], rowIndexMap: new Map() };
-  }
-
-  const headerRow: string[] = values[0].map(h => String(h).trim());
-  const data: T[] = [];
-  const rowIndexMap = new Map<string, number>(); // ID -> 1-indexed row number in spreadsheet
-
-  const idColIndex = 0; // すべてのシートで1列目が固有ID（project_id, schedule_id, todo_id, member_id）
-
-  for (let i = 1; i < values.length; i++) {
-    const row = values[i];
-    if (!row || row.length === 0) continue;
-
-    const rowObj: any = {};
-    for (let c = 0; c < headerRow.length; c++) {
-      const key = headerRow[c];
-      const val = row[c] !== undefined ? row[c] : '';
-      rowObj[key] = val;
-    }
-
-    // 型の変換（boolean, number）
-    if ('duration_business_days' in rowObj) {
-      rowObj.duration_business_days = Number(rowObj.duration_business_days) || 0;
-    }
-    if ('sort_order' in rowObj) {
-      rowObj.sort_order = Number(rowObj.sort_order) || 0;
-    }
-    if ('buffer_days' in rowObj && rowObj.buffer_days !== '') {
-      rowObj.buffer_days = Number(rowObj.buffer_days) || 0;
-    }
-    if ('auto_schedule' in rowObj) {
-      rowObj.auto_schedule = String(rowObj.auto_schedule).toLowerCase() === 'true' || rowObj.auto_schedule === true || rowObj.auto_schedule === '1';
-    }
-    if ('active' in rowObj) {
-      rowObj.active = String(rowObj.active).toLowerCase() === 'true' || rowObj.active === true || rowObj.active === '1';
-    }
-
-    const id = row[idColIndex];
-    if (id) {
-      rowIndexMap.set(String(id), i + 1); // 1-indexed (A1 is row 1, first data row is 2)
-      data.push(rowObj as T);
-    }
-  }
-
-  return { data, headerRow, rowIndexMap };
 }
 
 /**
  * 1行をシートの末尾に追加する
  */
 export async function appendSheetRow(sheetName: string, item: Record<string, any>): Promise<boolean> {
-  const sheets = await getGoogleSheetsClient();
-  if (!sheets) return false;
+  try {
+    const sheets = await getGoogleSheetsClient();
+    if (!sheets) return false;
 
-  const spreadsheetId = getSpreadsheetId();
-  await ensureSheetsExist();
+    const spreadsheetId = getSpreadsheetId();
+    await ensureSheetsExist();
 
-  const headers = SHEET_HEADERS[sheetName];
-  const rowValues = headers.map(h => {
-    const val = item[h];
-    return val !== undefined && val !== null ? String(val) : '';
-  });
+    const headers = SHEET_HEADERS[sheetName];
+    const rowValues = headers.map(h => {
+      const val = item[h];
+      return val !== undefined && val !== null ? String(val) : '';
+    });
 
-  await sheets.spreadsheets.values.append({
-    spreadsheetId,
-    range: `${sheetName}!A1`,
-    valueInputOption: 'USER_ENTERED',
-    requestBody: {
-      values: [rowValues],
-    },
-  });
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `${sheetName}!A1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [rowValues],
+      },
+    });
 
-  return true;
+    return true;
+  } catch (error) {
+    console.error(`[GoogleSheets] Error appending row to ${sheetName}:`, error);
+    return false;
+  }
 }
 
 /**
@@ -219,76 +229,86 @@ export async function updateSheetRow(
   id: string,
   updates: Record<string, any>
 ): Promise<boolean> {
-  const sheets = await getGoogleSheetsClient();
-  if (!sheets) return false;
+  try {
+    const sheets = await getGoogleSheetsClient();
+    if (!sheets) return false;
 
-  const spreadsheetId = getSpreadsheetId();
-  const { data, headerRow, rowIndexMap } = await fetchSheetRows(sheetName);
+    const spreadsheetId = getSpreadsheetId();
+    const { data, headerRow, rowIndexMap } = await fetchSheetRows(sheetName);
 
-  const rowIndex = rowIndexMap.get(id);
-  if (!rowIndex) {
-    console.error(`Row with id ${id} not found in sheet ${sheetName}`);
+    const rowIndex = rowIndexMap.get(id);
+    if (!rowIndex) {
+      console.error(`Row with id ${id} not found in sheet ${sheetName}`);
+      return false;
+    }
+
+    const existing = data.find((d: any) => Object.values(d)[0] === id) || {};
+    const merged = { ...existing, ...updates };
+
+    const rowValues = headerRow.map(h => {
+      const val = merged[h];
+      return val !== undefined && val !== null ? String(val) : '';
+    });
+
+    const lastColLetter = String.fromCharCode(64 + Math.min(26, headerRow.length));
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${sheetName}!A${rowIndex}:${lastColLetter}${rowIndex}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [rowValues],
+      },
+    });
+
+    return true;
+  } catch (error) {
+    console.error(`[GoogleSheets] Error updating row in ${sheetName}:`, error);
     return false;
   }
-
-  const existing = data.find((d: any) => Object.values(d)[0] === id) || {};
-  const merged = { ...existing, ...updates };
-
-  const rowValues = headerRow.map(h => {
-    const val = merged[h];
-    return val !== undefined && val !== null ? String(val) : '';
-  });
-
-  const lastColLetter = String.fromCharCode(64 + Math.min(26, headerRow.length));
-  await sheets.spreadsheets.values.update({
-    spreadsheetId,
-    range: `${sheetName}!A${rowIndex}:${lastColLetter}${rowIndex}`,
-    valueInputOption: 'USER_ENTERED',
-    requestBody: {
-      values: [rowValues],
-    },
-  });
-
-  return true;
 }
 
 /**
  * 該当IDの行を削除（空白化または削除リクエスト）
  */
 export async function deleteSheetRow(sheetName: string, id: string): Promise<boolean> {
-  const sheets = await getGoogleSheetsClient();
-  if (!sheets) return false;
+  try {
+    const sheets = await getGoogleSheetsClient();
+    if (!sheets) return false;
 
-  const spreadsheetId = getSpreadsheetId();
-  const { rowIndexMap } = await fetchSheetRows(sheetName);
+    const spreadsheetId = getSpreadsheetId();
+    const { rowIndexMap } = await fetchSheetRows(sheetName);
 
-  const rowIndex = rowIndexMap.get(id);
-  if (!rowIndex) return false;
+    const rowIndex = rowIndexMap.get(id);
+    if (!rowIndex) return false;
 
-  // シートIDを取得して行削除
-  const meta = await sheets.spreadsheets.get({ spreadsheetId });
-  const sheetObj = meta.data.sheets?.find(s => s.properties?.title === sheetName);
-  const sheetNumericId = sheetObj?.properties?.sheetId;
+    // シートIDを取得して行削除
+    const meta = await sheets.spreadsheets.get({ spreadsheetId });
+    const sheetObj = meta.data.sheets?.find(s => s.properties?.title === sheetName);
+    const sheetNumericId = sheetObj?.properties?.sheetId;
 
-  if (sheetNumericId === undefined) return false;
+    if (sheetNumericId === undefined) return false;
 
-  await sheets.spreadsheets.batchUpdate({
-    spreadsheetId,
-    requestBody: {
-      requests: [
-        {
-          deleteDimension: {
-            range: {
-              sheetId: sheetNumericId,
-              dimension: 'ROWS',
-              startIndex: rowIndex - 1,
-              endIndex: rowIndex,
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            deleteDimension: {
+              range: {
+                sheetId: sheetNumericId,
+                dimension: 'ROWS',
+                startIndex: rowIndex - 1,
+                endIndex: rowIndex,
+              },
             },
           },
-        },
-      ],
-    },
-  });
+        ],
+      },
+    });
 
-  return true;
+    return true;
+  } catch (error) {
+    console.error(`[GoogleSheets] Error deleting row from ${sheetName}:`, error);
+    return false;
+  }
 }

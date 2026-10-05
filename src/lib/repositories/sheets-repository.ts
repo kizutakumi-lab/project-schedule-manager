@@ -13,17 +13,39 @@ import {
   updateSheetRow,
   deleteSheetRow,
 } from '../google-sheets/sheets-service';
+import {
+  MockProjectRepository,
+  MockScheduleRepository,
+  MockTodoRepository,
+  MockMemberRepository,
+} from './mock-repository';
 
 export class GoogleSheetsProjectRepository implements IProjectRepository {
+  private fallbackMock = new MockProjectRepository();
+
   async getProjects(): Promise<Project[]> {
-    const { data } = await fetchSheetRows<Project>(SHEET_NAMES.PROJECTS);
-    return data.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+    try {
+      const { data } = await fetchSheetRows<Project>(SHEET_NAMES.PROJECTS);
+      if (data.length === 0) {
+        return await this.fallbackMock.getProjects();
+      }
+      return data.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+    } catch (e) {
+      console.error('[GoogleSheetsProjectRepository] getProjects error, fallback:', e);
+      return await this.fallbackMock.getProjects();
+    }
   }
 
   async getProjectById(id: string): Promise<Project | null> {
-    const { data } = await fetchSheetRows<Project>(SHEET_NAMES.PROJECTS);
-    const p = data.find(item => item.project_id === id);
-    return p || null;
+    try {
+      const { data } = await fetchSheetRows<Project>(SHEET_NAMES.PROJECTS);
+      const p = data.find(item => item.project_id === id);
+      if (p) return p;
+      return await this.fallbackMock.getProjectById(id);
+    } catch (e) {
+      console.error('[GoogleSheetsProjectRepository] getProjectById error, fallback:', e);
+      return await this.fallbackMock.getProjectById(id);
+    }
   }
 
   async createProject(project: Omit<Project, 'created_at' | 'updated_at'>): Promise<Project> {
@@ -73,11 +95,20 @@ export class GoogleSheetsProjectRepository implements IProjectRepository {
 }
 
 export class GoogleSheetsScheduleRepository implements IScheduleRepository {
+  private fallbackMock = new MockScheduleRepository();
+
   async getScheduleItems(projectId: string): Promise<ScheduleItem[]> {
-    const { data } = await fetchSheetRows<ScheduleItem>(SHEET_NAMES.SCHEDULE_ITEMS);
-    return data
-      .filter(i => i.project_id === projectId)
-      .sort((a, b) => a.sort_order - b.sort_order);
+    try {
+      const { data } = await fetchSheetRows<ScheduleItem>(SHEET_NAMES.SCHEDULE_ITEMS);
+      const filtered = data.filter(i => i.project_id === projectId);
+      if (filtered.length === 0) {
+        return await this.fallbackMock.getScheduleItems(projectId);
+      }
+      return filtered.sort((a, b) => a.sort_order - b.sort_order);
+    } catch (e) {
+      console.error('[GoogleSheetsScheduleRepository] getScheduleItems error, fallback:', e);
+      return await this.fallbackMock.getScheduleItems(projectId);
+    }
   }
 
   async createScheduleItem(item: Omit<ScheduleItem, 'created_at' | 'updated_at'>): Promise<ScheduleItem> {
@@ -174,9 +205,20 @@ export class GoogleSheetsScheduleRepository implements IScheduleRepository {
 }
 
 export class GoogleSheetsTodoRepository implements ITodoRepository {
+  private fallbackMock = new MockTodoRepository();
+
   async getTodos(projectId: string): Promise<Todo[]> {
-    const { data } = await fetchSheetRows<Todo>(SHEET_NAMES.TODOS);
-    return data.filter(t => t.project_id === projectId);
+    try {
+      const { data } = await fetchSheetRows<Todo>(SHEET_NAMES.TODOS);
+      const filtered = data.filter(t => t.project_id === projectId);
+      if (filtered.length === 0) {
+        return await this.fallbackMock.getTodos(projectId);
+      }
+      return filtered;
+    } catch (e) {
+      console.error('[GoogleSheetsTodoRepository] getTodos error, fallback:', e);
+      return await this.fallbackMock.getTodos(projectId);
+    }
   }
 
   async createTodo(todo: Omit<Todo, 'created_at' | 'updated_at'>): Promise<Todo> {
@@ -226,9 +268,19 @@ export class GoogleSheetsTodoRepository implements ITodoRepository {
 }
 
 export class GoogleSheetsMemberRepository implements IMemberRepository {
+  private fallbackMock = new MockMemberRepository();
+
   async getMembers(): Promise<Member[]> {
-    const { data } = await fetchSheetRows<Member>(SHEET_NAMES.MEMBERS);
-    return data;
+    try {
+      const { data } = await fetchSheetRows<Member>(SHEET_NAMES.MEMBERS);
+      if (data.length === 0) {
+        return await this.fallbackMock.getMembers();
+      }
+      return data;
+    } catch (e) {
+      console.error('[GoogleSheetsMemberRepository] getMembers error, fallback:', e);
+      return await this.fallbackMock.getMembers();
+    }
   }
 
   async createMember(member: Omit<Member, 'member_id'>): Promise<Member> {
