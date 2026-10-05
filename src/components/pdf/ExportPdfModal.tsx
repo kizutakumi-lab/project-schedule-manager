@@ -40,21 +40,9 @@ export function ExportPdfModal({
   const [showAssignee, setShowAssignee] = useState(false); // クライアント提出のためデフォルト非表示
   const [showTodos, setShowTodos] = useState(true);
 
-  if (!isOpen) return null;
-
-  const todayStr = new Date().toLocaleDateString('ja-JP', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
-
-  const handlePrint = () => {
-    window.print();
-  };
-
   // カレンダー全期間
-  const calendarStart = calendarDays[0]?.dateStr || project.start_date;
-  const calendarEnd = calendarDays[calendarDays.length - 1]?.dateStr || project.end_date;
+  const calendarStart = calendarDays[0]?.dateStr || project.start_date || '2025-04-01';
+  const calendarEnd = calendarDays[calendarDays.length - 1]?.dateStr || project.end_date || '2025-08-31';
 
   // 週単位カレンダーデータ
   const calendarWeeks = useMemo(() => {
@@ -68,6 +56,18 @@ export function ExportPdfModal({
   const dayMonthGroups = useMemo(() => {
     return groupCalendarByMonth(calendarDays);
   }, [calendarDays]);
+
+  if (!isOpen) return null;
+
+  const todayStr = new Date().toLocaleDateString('ja-JP', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+
+  const handlePrint = () => {
+    window.print();
+  };
 
   // 週セル幅（A4横にスッキリ収まる約40px）
   const weekCellWidth = 42;
