@@ -95,7 +95,7 @@ export function GanttTimeline({
           const isCategory = item.item_type === 'category';
           const isGroup = item.item_type === 'group';
 
-          let rowBgClass = 'h-10 relative flex items-center border-b ' + borderCol;
+          let rowBgClass = `h-10 box-border relative flex items-center border-b ${borderCol}`;
           if (isCategory) {
             rowBgClass += ' bg-slate-200/40 border-t-2 border-t-slate-700 font-bold';
           } else if (isGroup) {
@@ -187,21 +187,21 @@ export function GanttTimeline({
         {/* 担当者別 TODO タイムライン（左ツリーのTODO行と完全に高さ・行揃え同期） */}
         {assigneeGroups.length > 0 && (
           <>
-            {/* TODOセクションヘッダー行（h-8） */}
-            <div className={`h-8 relative flex items-center bg-slate-200/90 border-t-2 border-t-slate-700 border-b ${borderCol}`}>
+            {/* TODOセクションヘッダー行（h-8 box-border） */}
+            <div className={`h-8 box-border relative flex items-center bg-slate-200/90 border-t-2 border-t-slate-700 border-b ${borderCol}`}>
               <div className="px-3 text-[11px] font-semibold text-slate-600">
                 期日カレンダー
               </div>
             </div>
 
-            {/* 各担当者のTODO期日セル行（h-10） */}
+            {/* 各担当者のTODO期日セル行（h-10 box-border） */}
             {assigneeGroups.map(([assignee, list]) => {
               const todayStr = new Date().toISOString().split('T')[0];
 
               return (
                 <div
                   key={assignee}
-                  className={`h-10 relative flex items-center border-b ${borderCol} bg-slate-50/40`}
+                  className={`h-10 box-border relative flex items-center border-b ${borderCol} bg-slate-50/40`}
                 >
                   {calendarDays.map(day => {
                     const dayTodos = list.filter(t => t.due_date === day.dateStr);

@@ -32,9 +32,9 @@ export function GanttCalendarHeader({
   }[borderStrength];
 
   return (
-    <div className={`sticky top-0 z-20 bg-white border-b-2 ${headerBorderCol} shadow-xs select-none`}>
+    <div className={`sticky top-0 z-20 bg-white border-b-2 ${headerBorderCol} shadow-xs select-none h-[70px] box-border overflow-hidden`}>
       {/* 1行目: 年月 */}
-      <div className={`flex border-b ${borderCol} bg-slate-100 text-xs font-bold text-slate-800 h-6`}>
+      <div className={`flex border-b ${borderCol} bg-slate-100 text-xs font-bold text-slate-800 h-[26px] box-border`}>
         {monthGroups.map((group, idx) => (
           <div
             key={`${group.year}-${group.month}-${idx}`}
@@ -47,7 +47,7 @@ export function GanttCalendarHeader({
       </div>
 
       {/* 2行目: 日付 */}
-      <div className={`flex border-b ${borderCol} bg-white text-[11px] font-semibold text-slate-800 h-6`}>
+      <div className={`flex border-b ${borderCol} bg-white text-[11px] font-semibold text-slate-800 h-[24px] box-border`}>
         {calendarDays.map(day => (
           <div
             key={day.dateStr}
@@ -63,7 +63,7 @@ export function GanttCalendarHeader({
       </div>
 
       {/* 3行目: 曜日 */}
-      <div className="flex bg-slate-50 text-[10px] text-slate-600 h-5">
+      <div className="flex bg-slate-50 text-[10px] text-slate-600 h-[18px] box-border">
         {calendarDays.map(day => {
           let colorClass = 'text-slate-700';
           if (day.dayOfWeek === 0 || day.isHoliday) {
