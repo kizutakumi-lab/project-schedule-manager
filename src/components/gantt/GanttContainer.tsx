@@ -101,8 +101,15 @@ export function GanttContainer({
     }
   };
 
-  // カレンダー日付の範囲を算出
+  // カレンダー表示期間のカスタム設定
+  const [customRange, setCustomRange] = useState<{ start: string; end: string } | null>(null);
+
+  // カレンダー日付の範囲を算出（カスタム指定があればそれを優先）
   const calendarDays = useMemo(() => {
+    if (customRange && customRange.start && customRange.end && customRange.start <= customRange.end) {
+      return generateCalendarDays(customRange.start, customRange.end);
+    }
+
     let minDate = project.start_date || '2025-04-01';
     let maxDate = project.end_date || '2025-08-31';
 
@@ -116,11 +123,68 @@ export function GanttContainer({
     }
 
     return generateCalendarDays(minDate, maxDate);
-  }, [project, items, todos]);
+  }, [project, items, todos, customRange]);
 
   const monthGroups = useMemo(() => {
     return groupCalendarByMonth(calendarDays);
   }, [calendarDays]);
+
+  // 現在の有効なカレンダー期間
+  const activeRange = useMemo(() => {
+    if (calendarDays.length > 0) {
+      return {
+        start: calendarDays[0].dateStr,
+        end: calendarDays[calendarDays.length - 1].dateStr,
+      };
+    }
+    return {
+      start: project.start_date || '2025-04-01',
+      end: project.end_date || '2025-08-31',
+    };
+  }, [calendarDays, project]);
+
+  // 直後に紐付けされた後続工程を新規挿入
+  const handleInsertItemAfter = async (currentItem: ScheduleItem) => {
+    setIsSaving(true);
+    try {
+      const currentIdx = items.findIndex(i => i.schedule_id === currentItem.schedule_id);
+      const nextSortOrder = currentIdx >= 0 ? currentItem.sort_order + 0.5 : items.length + 1;
+
+      // 直前工程がcategoryならその直下の子、taskやgroupなら同じ階層
+      const targetParentId = currentItem.item_type === 'category'
+        ? currentItem.schedule_id
+        : currentItem.parent_id;
+
+      const newItem: Omit<ScheduleItem, 'created_at' | 'updated_at'> = {
+        schedule_id: `item-${Date.now()}`,
+        project_id: project.project_id,
+        parent_id: targetParentId,
+        item_type: 'task',
+        name: '新規工程',
+        duration_business_days: 3,
+        start_date: currentItem.end_date || project.start_date,
+        end_date: currentItem.end_date || project.start_date,
+        assignee: currentItem.assignee || '',
+        sort_order: nextSortOrder,
+        auto_schedule: true,
+        dependency_id: currentItem.schedule_id,
+        memo: '',
+      };
+
+      await createScheduleItemAction(newItem);
+      const nextList = [...items, newItem as ScheduleItem].sort((a, b) => a.sort_order - b.sort_order);
+      nextList.forEach((it, idx) => {
+        it.sort_order = idx + 1;
+      });
+      const recalculated = recalculateSchedule(nextList, project.start_date);
+      setItems(recalculated);
+      await updateMultipleScheduleItemsAction(project.project_id, recalculated);
+    } catch (err: any) {
+      alert('工程の挿入に失敗しました: ' + err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   // 開閉（折りたたみ）に応じた表示アイテム判定
   const visibleItemIds = useMemo(() => {
@@ -436,6 +500,9 @@ export function GanttContainer({
         setBorderStrength={setBorderStrength}
         isSaving={isSaving}
         uncompletedTodoCount={todos.filter(t => t.status === 'open').length}
+        calendarRange={activeRange}
+        setCalendarRange={setCustomRange}
+        onResetCalendarRange={() => setCustomRange(null)}
       />
 
       {/* ガントチャートメインボディ（左ツリー固定 ＋ 右タイムライン横スクロール） */}
@@ -463,6 +530,7 @@ export function GanttContainer({
               setNewItemType(type);
               setIsItemEditOpen(true);
             }}
+            onInsertItemAfter={handleInsertItemAfter}
             onDurationChange={handleDurationChange}
             onNameChange={handleNameChange}
             onAssigneeChange={handleAssigneeChange}

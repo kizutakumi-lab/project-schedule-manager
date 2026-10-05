@@ -5,15 +5,10 @@ import {
   ChevronDown,
   ChevronRight,
   Plus,
-  Edit2,
   Trash2,
-  Copy,
-  ArrowUp,
-  ArrowDown,
   Layers,
-  FolderPlus,
-  FilePlus,
   Check,
+  PlusCircle,
 } from 'lucide-react';
 import { ScheduleItem, Todo } from '@/types';
 import { GridBorderStrength } from './GanttCalendarHeader';
@@ -27,6 +22,7 @@ interface GanttLeftTreeProps {
   onDeleteItem: (id: string) => void;
   onMoveItem: (id: string, direction: 'up' | 'down') => void;
   onAddItem: (parentId: string | null, type: 'category' | 'group' | 'task') => void;
+  onInsertItemAfter: (item: ScheduleItem) => void;
   onDurationChange: (id: string, newDuration: number) => void;
   onNameChange: (id: string, newName: string) => void;
   onAssigneeChange: (id: string, newAssignee: string) => void;
@@ -41,10 +37,8 @@ export function GanttLeftTree({
   collapsedIds,
   onToggleCollapse,
   onEditItem,
-  onDuplicateItem,
   onDeleteItem,
-  onMoveItem,
-  onAddItem,
+  onInsertItemAfter,
   onDurationChange,
   onNameChange,
   onAssigneeChange,
@@ -60,11 +54,17 @@ export function GanttLeftTree({
   const [editingAssigneeId, setEditingAssigneeId] = useState<string | null>(null);
   const [editingAssigneeValue, setEditingAssigneeValue] = useState<string>('');
 
-  // 罫線カラー
+  // 罫線カラー（borderCol: 通常罫線, dividerCol: 右境界の明確な太線）
   const borderCol = {
     normal: 'border-slate-300',
     strong: 'border-slate-400',
     bold: 'border-slate-600',
+  }[borderStrength];
+
+  const dividerCol = {
+    normal: 'border-slate-400',
+    strong: 'border-slate-600',
+    bold: 'border-slate-800',
   }[borderStrength];
 
   const handleStartEditName = (item: ScheduleItem) => {
@@ -94,21 +94,21 @@ export function GanttLeftTree({
   };
 
   return (
-    <div className={`w-[440px] shrink-0 border-r-2 ${borderCol} bg-white select-none z-10 flex flex-col`}>
+    <div className={`w-[470px] shrink-0 border-r-2 ${dividerCol} bg-white select-none z-10 flex flex-col`}>
       {/* テーブルヘッダー（カレンダーヘッダーと高さを完全に揃える: h-[70px] box-border） */}
-      <div className={`h-[70px] box-border border-b-2 ${borderCol} bg-slate-100 flex items-center text-xs font-bold text-slate-800 px-3`}>
-        <div className="w-[240px] shrink-0 flex items-center space-x-1">
+      <div className={`h-[70px] box-border border-b-2 ${borderCol} bg-slate-100 flex items-center text-xs font-bold text-slate-800`}>
+        <div className={`w-[240px] shrink-0 px-3 flex items-center space-x-1 border-r ${borderCol}`}>
           <Layers className="w-3.5 h-3.5 text-slate-600" />
           <span>工程・階層名（直接編集可）</span>
         </div>
-        <div className={`w-20 shrink-0 text-center border-l ${borderCol}`}>担当者</div>
-        <div className={`w-16 shrink-0 text-center border-l ${borderCol}`}>営業日数</div>
-        <div className={`w-14 shrink-0 text-center border-l ${borderCol}`}>操作</div>
+        <div className={`w-[90px] shrink-0 text-center border-r ${borderCol}`}>担当者</div>
+        <div className={`w-[70px] shrink-0 text-center border-r ${borderCol}`}>営業日数</div>
+        <div className="w-[70px] shrink-0 text-center">操作</div>
       </div>
 
-      {/* 各行（divide-yを排除し、右タイムラインと完全同一のh-10 border-bで同期） */}
+      {/* 各行（すべての縦罫線・横罫線を完全同期） */}
       <div>
-        {items.map((item, index) => {
+        {items.map(item => {
           if (!visibleItemIds.has(item.schedule_id)) {
             return null;
           }
@@ -119,11 +119,11 @@ export function GanttLeftTree({
           const isTask = item.item_type === 'task';
 
           // インデント計算
-          let paddingLeft = 6;
-          if (isGroup) paddingLeft = 18;
-          if (isTask) paddingLeft = 32;
+          let paddingLeft = 8;
+          if (isGroup) paddingLeft = 20;
+          if (isTask) paddingLeft = 34;
 
-          // 背景色 & 境界線スタイル（左右で1pxのズレも出ないよう完全固定）
+          // 背景色 & 境界線スタイル
           let rowBg = 'bg-white hover:bg-slate-50/90';
           let borderClass = `border-b ${borderCol}`;
 
@@ -137,12 +137,12 @@ export function GanttLeftTree({
           return (
             <div
               key={item.schedule_id}
-              className={`h-10 box-border flex items-center px-2 text-xs transition-colors group ${rowBg} ${borderClass}`}
+              className={`h-10 box-border flex items-center text-xs transition-colors group ${rowBg} ${borderClass}`}
             >
               {/* 1. 工程名（直接表上でインライン編集可能） */}
               <div
                 style={{ paddingLeft: `${paddingLeft}px` }}
-                className="w-[240px] shrink-0 flex items-center space-x-1.5 pr-2"
+                className={`w-[240px] shrink-0 flex items-center space-x-1.5 pr-2 h-full border-r ${borderCol}`}
               >
                 {(isCategory || isGroup) ? (
                   <button
@@ -157,7 +157,7 @@ export function GanttLeftTree({
                     )}
                   </button>
                 ) : (
-                  <span className="w-4 shrink-0 text-slate-400 text-center">・</span>
+                  <span className="w-3 shrink-0 text-slate-400 text-center">・</span>
                 )}
 
                 {editingNameId === item.schedule_id ? (
@@ -193,7 +193,7 @@ export function GanttLeftTree({
               </div>
 
               {/* 2. 担当者（直接インライン編集可能） */}
-              <div className={`w-20 shrink-0 px-1 text-center border-l ${borderCol}`}>
+              <div className={`w-[90px] shrink-0 px-1 text-center border-r ${borderCol} h-full flex items-center justify-center`}>
                 {editingAssigneeId === item.schedule_id ? (
                   <input
                     type="text"
@@ -211,7 +211,7 @@ export function GanttLeftTree({
                   <span
                     onClick={() => handleStartEditAssignee(item)}
                     title="クリックして担当者を変更"
-                    className="truncate block cursor-text hover:bg-amber-100/60 px-1 py-0.5 rounded-xs text-[11px] text-slate-700 transition-colors border border-transparent hover:border-amber-300"
+                    className="truncate block w-full cursor-text hover:bg-amber-100/60 px-1 py-0.5 rounded-xs text-[11px] text-slate-700 transition-colors border border-transparent hover:border-amber-300"
                   >
                     {item.assignee || '-'}
                   </span>
@@ -219,7 +219,7 @@ export function GanttLeftTree({
               </div>
 
               {/* 3. 営業日数 */}
-              <div className={`w-16 shrink-0 flex items-center justify-center border-l ${borderCol}`}>
+              <div className={`w-[70px] shrink-0 flex items-center justify-center border-r ${borderCol} h-full`}>
                 {isTask ? (
                   <div className="flex items-center space-x-0.5">
                     <input
@@ -232,7 +232,7 @@ export function GanttLeftTree({
                           onDurationChange(item.schedule_id, val);
                         }
                       }}
-                      className="w-9 text-center py-0.5 px-0.5 border border-slate-300 group-hover:border-slate-400 rounded-xs text-[11px] bg-white focus:outline-hidden focus:ring-1 focus:ring-blue-500 font-bold text-slate-800"
+                      className="w-10 text-center py-0.5 px-0.5 border border-slate-300 group-hover:border-slate-400 rounded-xs text-[11px] bg-white focus:outline-hidden focus:ring-1 focus:ring-blue-500 font-bold text-slate-800"
                     />
                     <span className="text-[10px] text-slate-500">日</span>
                   </div>
@@ -243,12 +243,22 @@ export function GanttLeftTree({
                 )}
               </div>
 
-              {/* 4. 操作（ご要望通り削除ボタンのみ配置し、営業日数との重なりを完全排除） */}
-              <div className={`w-14 shrink-0 flex items-center justify-center border-l ${borderCol}`}>
+              {/* 4. 操作: 「次の行を挿入」ボタン ＋ 「削除」ボタン */}
+              <div className="w-[70px] shrink-0 flex items-center justify-center space-x-1.5 h-full px-1">
+                {/* 紐付けした次の行（後続工程）を直後に挿入するボタン */}
+                <button
+                  onClick={() => onInsertItemAfter(item)}
+                  className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-xs cursor-pointer transition-colors"
+                  title="この直後に連動工程を挿入"
+                >
+                  <PlusCircle className="w-3.5 h-3.5 text-blue-600" />
+                </button>
+
+                {/* 行削除ボタン */}
                 <button
                   onClick={() => onDeleteItem(item.schedule_id)}
                   className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xs cursor-pointer transition-colors"
-                  title="行を削除"
+                  title="この行を削除"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -260,49 +270,50 @@ export function GanttLeftTree({
         {/* 担当者別 TODO セクション（工程と同じテーブル形式で配置） */}
         {assigneeGroups.length > 0 && (
           <>
-            {/* TODOセクションヘッダー（大項目と同じ太線スタイル、高さh-8固定） */}
+            {/* TODOセクションヘッダー */}
             <div className={`h-8 box-border flex items-center px-3 text-xs font-bold text-slate-800 bg-slate-200/90 border-t-2 border-t-slate-700 border-b ${borderCol}`}>
               <div className="flex items-center space-x-1.5 flex-1">
                 <span className="text-blue-600 font-extrabold">✓</span>
                 <span>担当者別 TODO</span>
               </div>
-              <span className="text-[10px] text-slate-500 font-normal">
+              <span className="text-[10px] text-slate-600 font-semibold mr-1">
                 {assigneeGroups.reduce((acc, [, list]) => acc + list.length, 0)} 件
               </span>
             </div>
 
-            {/* 各担当者のTODO行（工程と同じ高さh-10固定） */}
+            {/* 各担当者のTODO行 */}
             {assigneeGroups.map(([assignee, list]) => (
               <div
                 key={assignee}
-                className={`h-10 box-border flex items-center px-2 text-xs bg-slate-50/70 hover:bg-slate-100 transition-colors border-b ${borderCol}`}
+                className={`h-10 box-border flex items-center text-xs bg-slate-50/70 hover:bg-slate-100 transition-colors border-b ${borderCol}`}
               >
                 {/* 工程名列: TODO: 担当者名 */}
-                <div className="w-[240px] shrink-0 pl-6 flex items-center space-x-1.5 truncate pr-2 font-medium text-slate-800">
+                <div className={`w-[240px] shrink-0 pl-6 flex items-center space-x-1.5 truncate pr-2 font-medium text-slate-800 h-full border-r ${borderCol}`}>
                   <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
                   <span className="truncate">TODO: {assignee}</span>
                 </div>
 
                 {/* 担当者列 */}
-                <div className={`w-20 shrink-0 px-1 text-center text-[11px] text-slate-600 border-l ${borderCol} truncate`}>
+                <div className={`w-[90px] shrink-0 px-1 text-center text-[11px] text-slate-600 border-r ${borderCol} truncate h-full flex items-center justify-center`}>
                   {assignee}
                 </div>
 
                 {/* 件数列 */}
-                <div className={`w-16 shrink-0 flex items-center justify-center border-l ${borderCol}`}>
+                <div className={`w-[70px] shrink-0 flex items-center justify-center border-r ${borderCol} h-full`}>
                   <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-700">
                     {list.length} 件
                   </span>
                 </div>
 
-                {/* 操作列: TODO追加ボタン */}
-                <div className={`w-14 shrink-0 flex items-center justify-center border-l ${borderCol}`}>
+                {/* 操作列: TODO追加ボタン（埋もれずに綺麗に中央配置） */}
+                <div className="w-[70px] shrink-0 flex items-center justify-center h-full px-1">
                   <button
                     onClick={() => onAddTodoForAssignee(assignee)}
-                    className="inline-flex items-center justify-center px-2 py-0.5 text-[10px] font-medium bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xs border border-blue-200 cursor-pointer transition-colors"
+                    className="inline-flex items-center justify-center space-x-0.5 px-2 py-1 text-[10px] font-semibold bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xs border border-blue-200 cursor-pointer transition-colors shadow-2xs"
                     title={`${assignee} にTODOを追加`}
                   >
-                    + 追加
+                    <Plus className="w-3 h-3" />
+                    <span>追加</span>
                   </button>
                 </div>
               </div>
