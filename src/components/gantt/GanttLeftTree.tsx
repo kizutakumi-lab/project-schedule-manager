@@ -15,7 +15,7 @@ import {
   FilePlus,
   Check,
 } from 'lucide-react';
-import { ScheduleItem } from '@/types';
+import { ScheduleItem, Todo } from '@/types';
 import { GridBorderStrength } from './GanttCalendarHeader';
 
 interface GanttLeftTreeProps {
@@ -32,6 +32,8 @@ interface GanttLeftTreeProps {
   onAssigneeChange: (id: string, newAssignee: string) => void;
   visibleItemIds: Set<string>;
   borderStrength: GridBorderStrength;
+  assigneeGroups: [string, Todo[]][];
+  onAddTodoForAssignee: (assignee: string) => void;
 }
 
 export function GanttLeftTree({
@@ -48,6 +50,8 @@ export function GanttLeftTree({
   onAssigneeChange,
   visibleItemIds,
   borderStrength,
+  assigneeGroups,
+  onAddTodoForAssignee,
 }: GanttLeftTreeProps) {
   // インライン編集中のID（name, assignee）
   const [editingNameId, setEditingNameId] = useState<string | null>(null);
@@ -310,6 +314,60 @@ export function GanttLeftTree({
             </div>
           );
         })}
+
+        {/* 担当者別 TODO セクション（工程と同じテーブル形式で配置） */}
+        {assigneeGroups.length > 0 && (
+          <>
+            {/* TODOセクションヘッダー（大項目と同じ太線スタイル） */}
+            <div className={`h-8 flex items-center px-3 text-xs font-bold text-slate-800 bg-slate-200/90 border-t-2 border-t-slate-700 border-b ${borderCol}`}>
+              <div className="flex items-center space-x-1.5 flex-1">
+                <span className="text-blue-600 font-extrabold">✓</span>
+                <span>担当者別 TODO</span>
+              </div>
+              <span className="text-[10px] text-slate-500 font-normal">
+                {assigneeGroups.reduce((acc, [, list]) => acc + list.length, 0)} 件
+              </span>
+            </div>
+
+            {/* 各担当者のTODO行 */}
+            {assigneeGroups.map(([assignee, list]) => (
+              <div
+                key={assignee}
+                className={`h-10 flex items-center px-2 text-xs bg-slate-50/70 hover:bg-slate-100 transition-colors border-b ${borderCol}`}
+              >
+                {/* 工程名列: TODO: 担当者名 */}
+                <div className="w-[230px] shrink-0 pl-6 flex items-center space-x-1.5 truncate pr-2 font-medium text-slate-800">
+                  <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                  <span className="truncate">TODO: {assignee}</span>
+                </div>
+
+                {/* 担当者列 */}
+                <div className={`w-24 shrink-0 px-1 text-center text-[11px] text-slate-600 border-l ${borderCol} truncate`}>
+                  {assignee}
+                </div>
+
+                {/* 件数列 */}
+                <div className={`w-16 shrink-0 flex items-center justify-center border-l ${borderCol}`}>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-700">
+                    {list.length} 件
+                  </span>
+                </div>
+
+                {/* 操作列: TODO追加ボタン */}
+                <div className={`w-28 shrink-0 flex items-center justify-center border-l ${borderCol} px-1`}>
+                  <button
+                    onClick={() => onAddTodoForAssignee(assignee)}
+                    className="inline-flex items-center space-x-1 px-2 py-0.5 text-[10px] font-medium bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xs border border-blue-200 cursor-pointer transition-colors"
+                    title={`${assignee} にTODOを追加`}
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>追加</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </>
+        )}
       </div>
     </div>
   );

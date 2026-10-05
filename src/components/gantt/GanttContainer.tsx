@@ -12,7 +12,6 @@ import { GanttToolbar } from './GanttToolbar';
 import { GanttCalendarHeader, GridBorderStrength } from './GanttCalendarHeader';
 import { GanttLeftTree } from './GanttLeftTree';
 import { GanttTimeline } from './GanttTimeline';
-import { GanttTodoSection } from '../todo/GanttTodoSection';
 import { ItemEditModal } from './ItemEditModal';
 import { BulkAddModal } from './BulkAddModal';
 import { ConflictWarningModal } from './ConflictWarningModal';
@@ -74,6 +73,33 @@ export function GanttContainer({
 
   // スクロール同期用参照
   const timelineScrollRef = useRef<HTMLDivElement>(null);
+  const leftTreeScrollRef = useRef<HTMLDivElement>(null);
+
+  // 担当者ごとのTODOグループ化
+  const assigneeGroups = useMemo<[string, Todo[]][]>(() => {
+    const map = new Map<string, Todo[]>();
+    for (const todo of todos) {
+      const key = todo.assignee || '未設定';
+      if (!map.has(key)) {
+        map.set(key, []);
+      }
+      map.get(key)!.push(todo);
+    }
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [todos]);
+
+  // 上下スクロール同期ハンドラ
+  const handleLeftScroll = () => {
+    if (leftTreeScrollRef.current && timelineScrollRef.current) {
+      timelineScrollRef.current.scrollTop = leftTreeScrollRef.current.scrollTop;
+    }
+  };
+
+  const handleTimelineScroll = () => {
+    if (leftTreeScrollRef.current && timelineScrollRef.current) {
+      leftTreeScrollRef.current.scrollTop = timelineScrollRef.current.scrollTop;
+    }
+  };
 
   // カレンダー日付の範囲を算出
   const calendarDays = useMemo(() => {
@@ -415,7 +441,11 @@ export function GanttContainer({
       {/* ガントチャートメインボディ（左ツリー固定 ＋ 右タイムライン横スクロール） */}
       <div className="flex-1 flex overflow-hidden">
         {/* 左側ツリー */}
-        <div className="h-full overflow-y-auto shrink-0 bg-white">
+        <div
+          ref={leftTreeScrollRef}
+          onScroll={handleLeftScroll}
+          className="h-full overflow-y-auto shrink-0 bg-white"
+        >
           <GanttLeftTree
             items={items}
             collapsedIds={collapsedIds}
@@ -438,12 +468,18 @@ export function GanttContainer({
             onAssigneeChange={handleAssigneeChange}
             visibleItemIds={visibleItemIds}
             borderStrength={borderStrength}
+            assigneeGroups={assigneeGroups}
+            onAddTodoForAssignee={assignee => {
+              setEditingTodo(null);
+              setIsTodoEditOpen(true);
+            }}
           />
         </div>
 
         {/* 右側タイムライン（横スクロール可能） */}
         <div
           ref={timelineScrollRef}
+          onScroll={handleTimelineScroll}
           className="flex-1 overflow-auto bg-slate-50/20"
         >
           {/* カレンダーヘッダー */}
@@ -454,7 +490,7 @@ export function GanttContainer({
             borderStrength={borderStrength}
           />
 
-          {/* ガントバー（折りたたみ時は横一列サマリー描画） */}
+          {/* ガントバー（折りたたみ時は横一列サマリー描画、最下部に担当者別TODO期日セルを描画） */}
           <GanttTimeline
             items={items}
             calendarDays={calendarDays}
@@ -466,14 +502,7 @@ export function GanttContainer({
               setIsItemEditOpen(true);
             }}
             borderStrength={borderStrength}
-          />
-
-          {/* 下部担当者別TODO行 */}
-          <GanttTodoSection
-            todos={todos}
-            calendarDays={calendarDays}
-            dayCellWidth={dayCellWidth}
-            borderStrength={borderStrength}
+            assigneeGroups={assigneeGroups}
             onTodoClick={todo => {
               setEditingTodo(todo);
               setIsTodoEditOpen(true);

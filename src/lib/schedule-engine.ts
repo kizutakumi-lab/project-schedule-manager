@@ -1,5 +1,5 @@
 import { ScheduleItem } from '@/types';
-import { calculateEndDate, getNextBusinessDay, getNextOrCurrentBusinessDay } from './business-days';
+import { calculateEndDate, getNextBusinessDay, getNextOrCurrentBusinessDay, countBusinessDays } from './business-days';
 
 /**
  * 工程リストを受け取り、auto_schedule や依存関係に基づいて
@@ -75,29 +75,34 @@ export function recalculateSchedule(
 }
 
 /**
- * 子要素の期間から親項目（大項目・中項目）の期間を更新する
+ * 子要素の期間から親項目（中項目・大項目）の期間および営業日数を再集計
  */
 function updateParentItemDates(itemMap: Map<string, ScheduleItem>) {
   const items = Array.from(itemMap.values());
-  const parentIds = new Set(items.map(i => i.parent_id).filter(Boolean) as string[]);
 
-  // 葉ノードから順に親へ反映するため、子から親へ再帰的に期間を集計
-  for (const parentId of parentIds) {
-    const parent = itemMap.get(parentId);
-    if (!parent) continue;
+  // 複数階層（task -> group -> category）に対応するため2パスで確実に反映
+  for (let pass = 0; pass < 3; pass++) {
+    for (const item of items) {
+      if (item.item_type === 'category' || item.item_type === 'group') {
+        const children = items.filter(c => c.parent_id === item.schedule_id);
+        if (children.length === 0) continue;
 
-    const children = items.filter(i => i.parent_id === parentId);
-    if (children.length === 0) continue;
+        const validStartDates = children.map(c => c.start_date).filter(Boolean);
+        const validEndDates = children.map(c => c.end_date).filter(Boolean);
 
-    // 子要素の有効な日付を抽出
-    const startDates = children.map(c => c.start_date).filter(Boolean);
-    const endDates = children.map(c => c.end_date).filter(Boolean);
+        if (validStartDates.length > 0 && validEndDates.length > 0) {
+          validStartDates.sort();
+          validEndDates.sort();
 
-    if (startDates.length > 0 && endDates.length > 0) {
-      startDates.sort();
-      endDates.sort();
-      parent.start_date = startDates[0];
-      parent.end_date = endDates[endDates.length - 1];
+          const earliestStart = validStartDates[0];
+          const latestEnd = validEndDates[validEndDates.length - 1];
+
+          item.start_date = earliestStart;
+          item.end_date = latestEnd;
+          // 親項目の営業日数を開始日〜終了日の実営業日数から自動計算！
+          item.duration_business_days = countBusinessDays(earliestStart, latestEnd);
+        }
+      }
     }
   }
 }

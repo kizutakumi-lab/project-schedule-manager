@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { CalendarDay, getBarPosition, getTaskColorTheme } from '@/lib/date-utils';
-import { ScheduleItem } from '@/types';
+import { ScheduleItem, Todo } from '@/types';
 import { GridBorderStrength } from './GanttCalendarHeader';
 
 interface GanttTimelineProps {
@@ -13,6 +13,8 @@ interface GanttTimelineProps {
   collapsedIds: Set<string>;
   onEditItem: (item: ScheduleItem) => void;
   borderStrength: GridBorderStrength;
+  assigneeGroups: [string, Todo[]][];
+  onTodoClick: (todo: Todo) => void;
 }
 
 export function GanttTimeline({
@@ -23,6 +25,8 @@ export function GanttTimeline({
   collapsedIds,
   onEditItem,
   borderStrength,
+  assigneeGroups,
+  onTodoClick,
 }: GanttTimelineProps) {
   if (calendarDays.length === 0) return null;
 
@@ -179,6 +183,72 @@ export function GanttTimeline({
             </div>
           );
         })}
+
+        {/* 担当者別 TODO タイムライン（左ツリーのTODO行と完全に高さ・行揃え同期） */}
+        {assigneeGroups.length > 0 && (
+          <>
+            {/* TODOセクションヘッダー行（h-8） */}
+            <div className={`h-8 relative flex items-center bg-slate-200/90 border-t-2 border-t-slate-700 border-b ${borderCol}`}>
+              <div className="px-3 text-[11px] font-semibold text-slate-600">
+                期日カレンダー
+              </div>
+            </div>
+
+            {/* 各担当者のTODO期日セル行（h-10） */}
+            {assigneeGroups.map(([assignee, list]) => {
+              const todayStr = new Date().toISOString().split('T')[0];
+
+              return (
+                <div
+                  key={assignee}
+                  className={`h-10 relative flex items-center border-b ${borderCol} bg-slate-50/40`}
+                >
+                  {calendarDays.map(day => {
+                    const dayTodos = list.filter(t => t.due_date === day.dateStr);
+
+                    return (
+                      <div
+                        key={day.dateStr}
+                        style={{ width: `${dayCellWidth}px` }}
+                        className="h-full shrink-0 flex items-center justify-center p-0.5"
+                      >
+                        {dayTodos.length > 0 && (
+                          <div className="w-full flex flex-col gap-0.5 items-center justify-center">
+                            {dayTodos.map(t => {
+                              const isOverdue = t.status === 'open' && t.due_date < todayStr;
+                              const isToday = t.status === 'open' && t.due_date === todayStr;
+                              const isCompleted = t.status === 'completed';
+
+                              let badgeColor = 'bg-blue-600 text-white font-bold';
+                              if (isCompleted) {
+                                badgeColor = 'bg-slate-200 text-slate-500 line-through';
+                              } else if (isOverdue) {
+                                badgeColor = 'bg-rose-600 text-white font-extrabold animate-pulse';
+                              } else if (isToday) {
+                                badgeColor = 'bg-amber-500 text-white font-extrabold';
+                              }
+
+                              return (
+                                <button
+                                  key={t.todo_id}
+                                  onClick={() => onTodoClick(t)}
+                                  title={`[${t.status === 'completed' ? '完了' : '未完了'}] ${t.title} (${t.due_date})`}
+                                  className={`w-full max-w-[28px] truncate px-1 py-0.5 text-[9px] rounded-xs cursor-pointer text-center leading-none shadow-2xs hover:scale-110 transition-transform ${badgeColor}`}
+                                >
+                                  ✓
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </>
+        )}
       </div>
     </div>
   );
