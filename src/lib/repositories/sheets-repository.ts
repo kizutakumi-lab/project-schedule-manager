@@ -55,7 +55,12 @@ export class GoogleSheetsProjectRepository implements IProjectRepository {
       created_at: now,
       updated_at: now,
     };
-    await appendSheetRow(SHEET_NAMES.PROJECTS, newProj);
+    try {
+      await appendSheetRow(SHEET_NAMES.PROJECTS, newProj);
+    } catch (e) {
+      console.error('[GoogleSheetsProjectRepository] appendSheetRow error:', e);
+    }
+    await this.fallbackMock.createProject(project);
     return newProj;
   }
 
@@ -118,7 +123,12 @@ export class GoogleSheetsScheduleRepository implements IScheduleRepository {
       created_at: now,
       updated_at: now,
     };
-    await appendSheetRow(SHEET_NAMES.SCHEDULE_ITEMS, newItem);
+    try {
+      await appendSheetRow(SHEET_NAMES.SCHEDULE_ITEMS, newItem);
+    } catch (e) {
+      console.error('[GoogleSheetsScheduleRepository] appendSheetRow error:', e);
+    }
+    await this.fallbackMock.createScheduleItem(item);
     return newItem;
   }
 

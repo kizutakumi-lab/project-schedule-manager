@@ -33,11 +33,27 @@ const STATUS_LABELS: Record<ProjectStatus, { text: string; bg: string; textCol: 
 };
 
 interface ProjectListProps {
-  initialProjects: Project[];
+  initialProjects?: Project[];
+  projects?: Project[];
+  setProjects?: React.Dispatch<React.SetStateAction<Project[]>>;
+  onOpenCreateModal?: () => void;
 }
 
-export function ProjectList({ initialProjects }: ProjectListProps) {
-  const [projects, setProjects] = useState<Project[]>(initialProjects);
+export function ProjectList({
+  initialProjects = [],
+  projects: controlledProjects,
+  setProjects: controlledSetProjects,
+  onOpenCreateModal,
+}: ProjectListProps) {
+  const [internalProjects, setInternalProjects] = useState<Project[]>(initialProjects);
+
+  React.useEffect(() => {
+    setInternalProjects(initialProjects);
+  }, [initialProjects]);
+
+  const projects = controlledProjects !== undefined ? controlledProjects : internalProjects;
+  const setProjects = controlledSetProjects !== undefined ? controlledSetProjects : setInternalProjects;
+
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [clientFilter, setClientFilter] = useState<string>('all');
