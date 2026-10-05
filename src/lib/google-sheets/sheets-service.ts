@@ -16,6 +16,7 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     'start_date',
     'end_date',
     'status',
+    'memo',
     'created_at',
     'updated_at',
   ],
@@ -32,6 +33,7 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     'sort_order',
     'auto_schedule',
     'dependency_id',
+    'buffer_days',
     'memo',
     'created_at',
     'updated_at',
@@ -160,6 +162,9 @@ export async function fetchSheetRows<T extends Record<string, any>>(sheetName: s
     }
     if ('sort_order' in rowObj) {
       rowObj.sort_order = Number(rowObj.sort_order) || 0;
+    }
+    if ('buffer_days' in rowObj && rowObj.buffer_days !== '') {
+      rowObj.buffer_days = Number(rowObj.buffer_days) || 0;
     }
     if ('auto_schedule' in rowObj) {
       rowObj.auto_schedule = String(rowObj.auto_schedule).toLowerCase() === 'true' || rowObj.auto_schedule === true || rowObj.auto_schedule === '1';
