@@ -8,6 +8,7 @@ export interface Project {
   start_date: string; // YYYY-MM-DD
   end_date: string;   // YYYY-MM-DD
   status: ProjectStatus;
+  memo?: string;
   created_at: string; // ISO 8601
   updated_at: string; // ISO 8601
 }

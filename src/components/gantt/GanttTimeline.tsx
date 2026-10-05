@@ -249,6 +249,13 @@ export function GanttTimeline({
             })}
           </>
         )}
+
+        {/* 左ツリーの「案件検討メモ・思考スペース」に対応する下部背景エリア */}
+        <div className={`h-[155px] border-t-2 border-slate-700 bg-slate-50/40 relative flex items-center justify-center text-slate-400 text-xs`}>
+          <div className="text-center select-none text-[11px] text-slate-400">
+            {/* タイムライン側のメモ帳対応余白（スクロール高さを完全に同期） */}
+          </div>
+        </div>
       </div>
     </div>
   );

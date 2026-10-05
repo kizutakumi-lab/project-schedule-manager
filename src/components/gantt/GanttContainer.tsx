@@ -31,6 +31,7 @@ import {
   updateTodoAction,
   deleteTodoAction,
 } from '@/app/actions/todos';
+import { updateProjectAction } from '@/app/actions/projects';
 import { useRouter } from 'next/navigation';
 
 interface GanttContainerProps {
@@ -479,6 +480,52 @@ export function GanttContainer({
     setTodos(prev => prev.filter(t => t.todo_id !== id));
   };
 
+  // 担当者単位での全TODO削除
+  const handleDeleteAssigneeTodos = async (assignee: string) => {
+    const targetTodos = todos.filter(t => (t.assignee || '未設定') === assignee);
+    if (targetTodos.length === 0) return;
+
+    const ok = window.confirm(`${assignee} さんのTODO（${targetTodos.length}件）をすべて削除してもよろしいですか？`);
+    if (!ok) return;
+
+    setIsSaving(true);
+    try {
+      for (const t of targetTodos) {
+        await deleteTodoAction(t.todo_id, project.project_id);
+      }
+      setTodos(prev => prev.filter(t => (t.assignee || '未設定') !== assignee));
+    } catch (err: any) {
+      alert('TODOの削除に失敗しました: ' + err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // 案件メモ帳スペース
+  const [projectMemo, setProjectMemo] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const local = localStorage.getItem(`project_memo_${project.project_id}`);
+      if (local !== null) return local;
+    }
+    return project.memo || '';
+  });
+
+  const memoTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const handleProjectMemoChange = (newMemo: string) => {
+    setProjectMemo(newMemo);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`project_memo_${project.project_id}`, newMemo);
+    }
+    if (memoTimerRef.current) clearTimeout(memoTimerRef.current);
+    memoTimerRef.current = setTimeout(async () => {
+      try {
+        await updateProjectAction(project.project_id, { memo: newMemo });
+      } catch (e) {
+        console.error('Memo auto-save failed', e);
+      }
+    }, 1000);
+  };
+
   return (
     <div className="flex flex-col h-screen bg-white overflow-hidden">
       {/* 統合1行ヘッダーツールバー */}
@@ -541,6 +588,9 @@ export function GanttContainer({
               setEditingTodo(null);
               setIsTodoEditOpen(true);
             }}
+            onDeleteAssigneeTodos={handleDeleteAssigneeTodos}
+            projectMemo={projectMemo}
+            onProjectMemoChange={handleProjectMemoChange}
           />
         </div>
 

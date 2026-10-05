@@ -9,6 +9,7 @@ import {
   Layers,
   Check,
   PlusCircle,
+  FileText,
 } from 'lucide-react';
 import { ScheduleItem, Todo } from '@/types';
 import { GridBorderStrength } from './GanttCalendarHeader';
@@ -30,6 +31,9 @@ interface GanttLeftTreeProps {
   borderStrength: GridBorderStrength;
   assigneeGroups: [string, Todo[]][];
   onAddTodoForAssignee: (assignee: string) => void;
+  onDeleteAssigneeTodos: (assignee: string) => void;
+  projectMemo: string;
+  onProjectMemoChange: (memo: string) => void;
 }
 
 export function GanttLeftTree({
@@ -46,6 +50,9 @@ export function GanttLeftTree({
   borderStrength,
   assigneeGroups,
   onAddTodoForAssignee,
+  onDeleteAssigneeTodos,
+  projectMemo,
+  onProjectMemoChange,
 }: GanttLeftTreeProps) {
   // インライン編集中のID（name, assignee）
   const [editingNameId, setEditingNameId] = useState<string | null>(null);
@@ -287,10 +294,20 @@ export function GanttLeftTree({
                 key={assignee}
                 className={`h-10 box-border flex items-center text-xs bg-slate-50/70 hover:bg-slate-100 transition-colors border-b ${borderCol}`}
               >
-                {/* 工程名列: TODO: 担当者名 */}
-                <div className={`w-[240px] shrink-0 pl-6 flex items-center space-x-1.5 truncate pr-2 font-medium text-slate-800 h-full border-r ${borderCol}`}>
-                  <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
-                  <span className="truncate">TODO: {assignee}</span>
+                {/* 工程名列: TODO: 担当者名 ＋ 氏名の横の削除マーク */}
+                <div className={`w-[240px] shrink-0 pl-6 flex items-center justify-between space-x-1.5 truncate pr-2 font-medium text-slate-800 h-full border-r ${borderCol}`}>
+                  <div className="flex items-center space-x-1.5 truncate">
+                    <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                    <span className="truncate">TODO: {assignee}</span>
+                  </div>
+                  {/* ご要望: 氏名の横に削除マークを追加して、必要ない人の分は削除できるように */}
+                  <button
+                    onClick={() => onDeleteAssigneeTodos(assignee)}
+                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xs cursor-pointer transition-colors shrink-0"
+                    title={`${assignee} さんのTODOを削除`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
 
                 {/* 担当者列 */}
@@ -320,6 +337,24 @@ export function GanttLeftTree({
             ))}
           </>
         )}
+
+        {/* ご要望: TODOの下にメモ帳的に考えなければいけないことを書き記せるスペース */}
+        <div className={`border-t-2 border-slate-700 bg-amber-50/50 p-3`}>
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center space-x-1.5 font-bold text-slate-800 text-xs">
+              <FileText className="w-3.5 h-3.5 text-amber-600" />
+              <span>案件検討メモ・思考スペース</span>
+            </div>
+            <span className="text-[10px] text-slate-400 font-medium">リアルタイム保存</span>
+          </div>
+          <textarea
+            value={projectMemo}
+            onChange={e => onProjectMemoChange(e.target.value)}
+            placeholder="考えなければいけないこと、検討事項、クライアントへの確認事項、備忘録などを自由にメモ..."
+            rows={5}
+            className="w-full text-xs p-2.5 rounded-md border border-amber-200 bg-white text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-amber-500 resize-y leading-relaxed shadow-2xs font-sans"
+          />
+        </div>
       </div>
     </div>
   );
