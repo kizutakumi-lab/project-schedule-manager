@@ -8,6 +8,79 @@ import {
 } from './business-days';
 
 /**
+ * 階層構造に基づいてアイテムを並び替える（親が必ず子の上にくることを保証）
+ */
+export function sortItemsHierarchically(items: ScheduleItem[]): ScheduleItem[] {
+  if (items.length <= 1) return items;
+
+  const itemMap = new Map<string, ScheduleItem>();
+  for (const item of items) {
+    itemMap.set(item.schedule_id, { ...item });
+  }
+
+  // 親IDごとの子要素マップ
+  const childrenMap = new Map<string | null, ScheduleItem[]>();
+  for (const item of items) {
+    // 親が存在しない、または親IDが無効な場合は null（ルート）扱い
+    const parentKey = item.parent_id && itemMap.has(item.parent_id) ? item.parent_id : null;
+    if (!childrenMap.has(parentKey)) {
+      childrenMap.set(parentKey, []);
+    }
+    childrenMap.get(parentKey)!.push(item);
+  }
+
+  // 各ノード（親）の有効ソートキー（自身または配下の子孫の最小 sort_order）を計算
+  const getMinSortOrder = (item: ScheduleItem): number => {
+    let minSort = item.sort_order ?? 999999;
+    const children = childrenMap.get(item.schedule_id) || [];
+    for (const child of children) {
+      minSort = Math.min(minSort, getMinSortOrder(child));
+    }
+    return minSort;
+  };
+
+  // 各階層内のアイテムを並べ替えるソーター
+  const sortList = (list: ScheduleItem[]): ScheduleItem[] => {
+    return [...list].sort((a, b) => {
+      const aMin = getMinSortOrder(a);
+      const bMin = getMinSortOrder(b);
+      if (aMin !== bMin) return aMin - bMin;
+      return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+    });
+  };
+
+  // 深さ優先探索（DFS）で親 -> 子 -> 孫 の順序で配列を構築
+  const result: ScheduleItem[] = [];
+  const traverse = (parentId: string | null) => {
+    const directChildren = childrenMap.get(parentId) || [];
+    const sortedChildren = sortList(directChildren);
+
+    for (const child of sortedChildren) {
+      result.push(child);
+      // そのアイテムを親とする子要素を直下に展開
+      traverse(child.schedule_id);
+    }
+  };
+
+  traverse(null);
+
+  // 孤立したアイテム（もしあれば末尾に追加）
+  const addedIds = new Set(result.map(r => r.schedule_id));
+  for (const item of items) {
+    if (!addedIds.has(item.schedule_id)) {
+      result.push(item);
+    }
+  }
+
+  // sort_order を 1, 2, 3... で正規化
+  result.forEach((item, index) => {
+    item.sort_order = index + 1;
+  });
+
+  return result;
+}
+
+/**
  * 工程リストを受け取り、auto_schedule や依存関係に基づいて
  * 全工程の start_date, end_date を自動再計算して返す
  *
@@ -21,18 +94,14 @@ export function recalculateSchedule(
 ): ScheduleItem[] {
   if (items.length === 0) return [];
 
-  // ソート順（sort_order）昇順で並べ替え
-  const sorted = [...items].sort((a, b) => a.sort_order - b.sort_order);
+  // まず親が必ず子の上に来るように階層的ツリーソートを実行
+  const sorted = sortItemsHierarchically(items);
 
   // 計算結果を保持するマップ
   const itemMap = new Map<string, ScheduleItem>();
   for (const item of sorted) {
     itemMap.set(item.schedule_id, { ...item });
   }
-
-  // 親アイテム（category, group）とタスク（task）を識別
-  // 基本的にタスク（task）が実際の日程を持ち、後続に連動する
-  // ※ もし親項目しか登録されていない場合でもエラーにならないようにする
 
   let lastCompletedEndDate: string | null = null;
   const baseStartDate = getNextOrCurrentBusinessDay(projectStartDate);
@@ -79,9 +148,9 @@ export function recalculateSchedule(
   }
 
   // 親グループ（group, category）の開始日・終了日を、子要素の期間から再集計
-  // 階層のボトムアップで親の期間を算出
   updateParentItemDates(itemMap);
 
+  // 最終的な階層ソート済み配列を返す
   return Array.from(itemMap.values()).sort((a, b) => a.sort_order - b.sort_order);
 }
 
@@ -91,7 +160,7 @@ export function recalculateSchedule(
 function updateParentItemDates(itemMap: Map<string, ScheduleItem>) {
   const items = Array.from(itemMap.values());
 
-  // 複数階層（task -> group -> category）に対応するため2パスで確実に反映
+  // 複数階層（task -> group -> category）に対応するため複数パスで確実に反映
   for (let pass = 0; pass < 3; pass++) {
     for (const item of items) {
       if (item.item_type === 'category' || item.item_type === 'group') {
@@ -110,7 +179,6 @@ function updateParentItemDates(itemMap: Map<string, ScheduleItem>) {
 
           item.start_date = earliestStart;
           item.end_date = latestEnd;
-          // 親項目の営業日数を開始日〜終了日の実営業日数から自動計算！
           item.duration_business_days = countBusinessDays(earliestStart, latestEnd);
         }
       }
@@ -119,52 +187,43 @@ function updateParentItemDates(itemMap: Map<string, ScheduleItem>) {
 }
 
 /**
- * テキストから複数工程を一括生成するユーティリティ
- * 例:
- * シナリオ制作 / 10日
- * 監修 / 3日
- * 動画コンテ制作 / 8日
+ * テキストから一括スケジュール工程を解析
+ * 書式: 「工程名 / 営業日数 / 担当者(任意)」
  */
 export function parseBulkScheduleInput(
-  input: string,
+  rawText: string,
   projectId: string,
-  parentId: string | null,
-  startSortOrder: number,
-  defaultAssignee: string = ''
+  parentId: string | null = null,
+  startSortOrder: number = 1
 ): Partial<ScheduleItem>[] {
-  const lines = input.split('\n').map(l => l.trim()).filter(Boolean);
+  const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
   const items: Partial<ScheduleItem>[] = [];
 
-  let currentSort = startSortOrder;
+  let curSort = startSortOrder;
 
   for (const line of lines) {
-    // 区切り文字: "/", "／", ",", "、", "\t"
-    const parts = line.split(/[/／,、\t]/).map(s => s.trim()).filter(Boolean);
-    if (parts.length === 0) continue;
+    const parts = line.split(/[\/／]/).map(p => p.trim());
+    const name = parts[0] || '未定工程';
 
-    const name = parts[0];
-    let duration = 1;
-    let assignee = defaultAssignee;
-
-    if (parts.length > 1) {
-      const matchDays = parts[1].match(/\d+/);
-      if (matchDays) {
-        duration = parseInt(matchDays[0], 10);
+    let duration = 3; // デフォルト3日
+    if (parts[1]) {
+      const match = parts[1].match(/\d+/);
+      if (match) {
+        duration = parseInt(match[0], 10);
       }
     }
 
-    if (parts.length > 2) {
-      assignee = parts[2];
-    }
+    const assignee = parts[2] || '';
 
     items.push({
+      schedule_id: `bulk-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       project_id: projectId,
       parent_id: parentId,
       item_type: 'task',
       name,
       duration_business_days: duration,
       assignee,
-      sort_order: currentSort++,
+      sort_order: curSort++,
       auto_schedule: true,
       dependency_id: null,
       memo: '',
