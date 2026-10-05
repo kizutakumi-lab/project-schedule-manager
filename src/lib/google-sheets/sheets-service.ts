@@ -312,3 +312,65 @@ export async function deleteSheetRow(sheetName: string, id: string): Promise<boo
     return false;
   }
 }
+
+/**
+ * 対象プロジェクトの全工程データをGoogleスプレッドシートへ高速に一括置換・保存する
+ */
+export async function saveProjectScheduleItemsBatch(
+  projectId: string,
+  projectItems: Record<string, any>[]
+): Promise<boolean> {
+  try {
+    const sheets = await getGoogleSheetsClient();
+    if (!sheets) return false;
+
+    const spreadsheetId = getSpreadsheetId();
+    await ensureSheetsExist();
+
+    const sheetName = SHEET_NAMES.SCHEDULE_ITEMS;
+    const headers = SHEET_HEADERS[sheetName];
+
+    // 1. 既存の全工程を取得
+    const { data: allItems } = await fetchSheetRows(sheetName);
+
+    // 2. 他のプロジェクトの工程を残し、このプロジェクトの工程を新しいリストで置き換える
+    const otherProjectsItems = allItems.filter(i => i.project_id !== projectId);
+    const mergedList = [...otherProjectsItems, ...projectItems];
+
+    // 3. 行データ配列を生成
+    const now = new Date().toISOString();
+    const rowsValues = mergedList.map(item => {
+      const updatedItem: Record<string, any> = {
+        ...item,
+        updated_at: item.updated_at || now,
+      };
+      return headers.map(h => {
+        const val = updatedItem[h];
+        return val !== undefined && val !== null ? String(val) : '';
+      });
+    });
+
+    // 4. シートのA2以降をクリア
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId,
+      range: `${sheetName}!A2:Z`,
+    });
+
+    // 5. 新しい全データ行をA2から一括挿入
+    if (rowsValues.length > 0) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${sheetName}!A2`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: {
+          values: rowsValues,
+        },
+      });
+    }
+
+    return true;
+  } catch (error) {
+    console.error('[GoogleSheets] Error in saveProjectScheduleItemsBatch:', error);
+    return false;
+  }
+}

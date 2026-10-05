@@ -16,6 +16,7 @@ import {
   Grid,
   CalendarRange,
   X,
+  Save,
 } from 'lucide-react';
 import { Project } from '@/types';
 import { GridBorderStrength } from './GanttCalendarHeader';
@@ -32,6 +33,8 @@ interface GanttToolbarProps {
   borderStrength: GridBorderStrength;
   setBorderStrength: (strength: GridBorderStrength) => void;
   isSaving: boolean;
+  hasUnsavedChanges?: boolean;
+  onSave?: () => void;
   uncompletedTodoCount: number;
   calendarRange: { start: string; end: string };
   setCalendarRange: (range: { start: string; end: string }) => void;
@@ -50,6 +53,8 @@ export function GanttToolbar({
   borderStrength,
   setBorderStrength,
   isSaving,
+  hasUnsavedChanges = false,
+  onSave,
   uncompletedTodoCount,
   calendarRange,
   setCalendarRange,
@@ -292,20 +297,41 @@ export function GanttToolbar({
           </button>
         </div>
 
-        {/* 保存ステータス */}
-        <div className="flex items-center space-x-1 text-[10px] text-slate-400 pl-1">
-          {isSaving ? (
-            <>
-              <RefreshCw className="w-3 h-3 text-blue-400 animate-spin" />
-              <span className="hidden lg:inline text-blue-400">保存中</span>
-            </>
-          ) : (
-            <>
-              <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-              <span className="hidden lg:inline text-emerald-400">同期済</span>
-            </>
-          )}
-        </div>
+        {/* 保存ボタン / 同期ステータス */}
+        {hasUnsavedChanges ? (
+          <button
+            onClick={onSave}
+            disabled={isSaving}
+            className="flex items-center space-x-1.5 px-3 py-1 bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 font-bold rounded-md text-xs shadow-md transition-all cursor-pointer ring-2 ring-amber-300 ring-offset-1 ring-offset-slate-900"
+            title="Googleスプレッドシートへ変更内容を一括保存 (Ctrl+S)"
+          >
+            {isSaving ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-slate-950" />
+                <span>保存中...</span>
+              </>
+            ) : (
+              <>
+                <Save className="w-3.5 h-3.5 text-slate-950" />
+                <span>保存する</span>
+              </>
+            )}
+          </button>
+        ) : (
+          <div className="flex items-center space-x-1 text-[11px] text-emerald-400 px-2.5 py-1 bg-slate-800/80 rounded-md border border-slate-700/80">
+            {isSaving ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400" />
+                <span className="text-blue-400">保存中...</span>
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="hidden sm:inline font-medium">同期済み</span>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

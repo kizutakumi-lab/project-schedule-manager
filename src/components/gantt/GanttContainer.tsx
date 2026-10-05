@@ -60,6 +60,7 @@ export function GanttContainer({
   // 罫線の濃さ設定（デフォルト: くっきり strong）
   const [borderStrength, setBorderStrength] = useState<GridBorderStrength>('strong');
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
   const [conflictModalOpen, setConflictModalOpen] = useState<boolean>(false);
   const [conflictMessage, setConflictMessage] = useState<string>('');
 
@@ -152,47 +153,80 @@ export function GanttContainer({
     };
   }, [calendarDays, project]);
 
-  // 直後に紐付けされた後続工程を新規挿入
-  const handleInsertItemAfter = async (currentItem: ScheduleItem) => {
+  // Googleスプレッドシートへの一括保存ハンドラ
+  const handleSaveAll = async () => {
     setIsSaving(true);
     try {
-      const currentIdx = items.findIndex(i => i.schedule_id === currentItem.schedule_id);
-      const nextSortOrder = currentIdx >= 0 ? currentItem.sort_order + 0.5 : items.length + 1;
-
-      // 直前工程がcategoryならその直下の子、taskやgroupなら同じ階層
-      const targetParentId = currentItem.item_type === 'category'
-        ? currentItem.schedule_id
-        : currentItem.parent_id;
-
-      const newItem: Omit<ScheduleItem, 'created_at' | 'updated_at'> = {
-        schedule_id: `item-${Date.now()}`,
-        project_id: project.project_id,
-        parent_id: targetParentId,
-        item_type: 'task',
-        name: '新規工程',
-        duration_business_days: 3,
-        start_date: currentItem.end_date || project.start_date,
-        end_date: currentItem.end_date || project.start_date,
-        assignee: currentItem.assignee || '',
-        sort_order: nextSortOrder,
-        auto_schedule: true,
-        dependency_id: currentItem.schedule_id,
-        memo: '',
-      };
-
-      await createScheduleItemAction(newItem);
-      const nextList = [...items, newItem as ScheduleItem].sort((a, b) => a.sort_order - b.sort_order);
-      nextList.forEach((it, idx) => {
-        it.sort_order = idx + 1;
-      });
-      const recalculated = recalculateSchedule(nextList, project.start_date);
-      setItems(recalculated);
-      await updateMultipleScheduleItemsAction(project.project_id, recalculated);
+      await updateMultipleScheduleItemsAction(project.project_id, items);
+      setHasUnsavedChanges(false);
     } catch (err: any) {
-      alert('工程の挿入に失敗しました: ' + err.message);
+      alert('Googleスプレッドシートへの保存に失敗しました: ' + (err?.message || '不明なエラー'));
     } finally {
       setIsSaving(false);
     }
+  };
+
+  // Ctrl+S / Cmd+S ショートカット
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        if (hasUnsavedChanges && !isSaving) {
+          handleSaveAll();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [hasUnsavedChanges, isSaving, items]);
+
+  // 離脱防止警告
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+  // 直後に紐付けされた後続工程を新規挿入（0ms即時反映）
+  const handleInsertItemAfter = (currentItem: ScheduleItem) => {
+    const currentIdx = items.findIndex(i => i.schedule_id === currentItem.schedule_id);
+    const nextSortOrder = currentIdx >= 0 ? currentItem.sort_order + 0.5 : items.length + 1;
+
+    // 直前工程がcategoryならその直下の子、taskやgroupなら同じ階層
+    const targetParentId = currentItem.item_type === 'category'
+      ? currentItem.schedule_id
+      : currentItem.parent_id;
+
+    const newItem: ScheduleItem = {
+      schedule_id: `item-${Date.now()}`,
+      project_id: project.project_id,
+      parent_id: targetParentId,
+      item_type: 'task',
+      name: '新規工程',
+      duration_business_days: 3,
+      start_date: currentItem.end_date || project.start_date,
+      end_date: currentItem.end_date || project.start_date,
+      assignee: currentItem.assignee || '',
+      sort_order: nextSortOrder,
+      auto_schedule: true,
+      dependency_id: currentItem.schedule_id,
+      memo: '',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const nextList = [...items, newItem].sort((a, b) => a.sort_order - b.sort_order);
+    nextList.forEach((it, idx) => {
+      it.sort_order = idx + 1;
+    });
+    const recalculated = recalculateSchedule(nextList, project.start_date);
+    setItems(recalculated);
+    setHasUnsavedChanges(true);
   };
 
   // 開閉（折りたたみ）に応じた表示アイテム判定
@@ -254,8 +288,8 @@ export function GanttContainer({
     return () => clearTimeout(timer);
   }, [handleScrollToToday]);
 
-  // 営業日数のインライン変更ハンドラ
-  const handleDurationChange = async (itemId: string, newDuration: number) => {
+  // 営業日数のインライン変更ハンドラ (0ms即時反映)
+  const handleDurationChange = (itemId: string, newDuration: number) => {
     const updatedItems = items.map(item =>
       item.schedule_id === itemId
         ? { ...item, duration_business_days: newDuration }
@@ -263,135 +297,89 @@ export function GanttContainer({
     );
     const recalculated = recalculateSchedule(updatedItems, project.start_date);
     setItems(recalculated);
-
-    try {
-      setIsSaving(true);
-      await updateMultipleScheduleItemsAction(project.project_id, recalculated);
-    } catch (err: any) {
-      console.error('Failed to save updated durations:', err);
-    } finally {
-      setIsSaving(false);
-    }
+    setHasUnsavedChanges(true);
   };
 
-  // 工程名の直接インライン変更ハンドラ
-  const handleNameChange = async (itemId: string, newName: string) => {
+  // 工程名の直接インライン変更ハンドラ (0ms即時反映)
+  const handleNameChange = (itemId: string, newName: string) => {
     const updatedItems = items.map(item =>
       item.schedule_id === itemId ? { ...item, name: newName } : item
     );
     setItems(updatedItems);
-
-    try {
-      setIsSaving(true);
-      await updateScheduleItemAction(itemId, { name: newName });
-    } catch (err: any) {
-      console.error('Failed to save name:', err);
-    } finally {
-      setIsSaving(false);
-    }
+    setHasUnsavedChanges(true);
   };
 
-  // 担当者の直接インライン変更ハンドラ
-  const handleAssigneeChange = async (itemId: string, newAssignee: string) => {
+  // 担当者の直接インライン変更ハンドラ (0ms即時反映)
+  const handleAssigneeChange = (itemId: string, newAssignee: string) => {
     const updatedItems = items.map(item =>
       item.schedule_id === itemId ? { ...item, assignee: newAssignee } : item
     );
     setItems(updatedItems);
-
-    try {
-      setIsSaving(true);
-      await updateScheduleItemAction(itemId, { assignee: newAssignee });
-    } catch (err: any) {
-      console.error('Failed to save assignee:', err);
-    } finally {
-      setIsSaving(false);
-    }
+    setHasUnsavedChanges(true);
   };
 
-  // 工程の編集・新規作成ハンドラ（モーダル経由）
+  // 工程の編集・新規作成ハンドラ（モーダル経由・0ms即時反映）
   const handleSaveItem = async (data: Partial<ScheduleItem>) => {
-    setIsSaving(true);
-    try {
-      if (editingItem) {
-        const res = await updateScheduleItemAction(
-          editingItem.schedule_id,
-          data,
-          editingItem.updated_at
-        );
-        if (res.conflict) {
-          setConflictMessage(res.message || '');
-          setConflictModalOpen(true);
-          return;
-        }
-
-        const updatedItems = items.map(i =>
-          i.schedule_id === editingItem.schedule_id ? { ...i, ...data } : i
-        );
-        const recalculated = recalculateSchedule(updatedItems, project.start_date);
-        setItems(recalculated);
-      } else {
-        const maxSort = items.length > 0 ? Math.max(...items.map(i => i.sort_order || 0)) : 0;
-        const newItem: Omit<ScheduleItem, 'created_at' | 'updated_at'> = {
-          schedule_id: `item-${Date.now()}`,
-          project_id: project.project_id,
-          parent_id: data.parent_id || null,
-          item_type: data.item_type || 'task',
-          name: data.name || '新規工程',
-          duration_business_days: data.duration_business_days || 1,
-          start_date: data.start_date || project.start_date,
-          end_date: data.end_date || project.start_date,
-          assignee: data.assignee || '',
-          sort_order: maxSort + 1,
-          auto_schedule: data.auto_schedule ?? true,
-          dependency_id: data.dependency_id || null,
-          memo: data.memo || '',
-        };
-
-        await createScheduleItemAction(newItem);
-        const nextList = [...items, newItem as ScheduleItem];
-        const recalculated = recalculateSchedule(nextList, project.start_date);
-        setItems(recalculated);
-      }
-    } catch (err: any) {
-      alert('工程の保存に失敗しました: ' + err.message);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  // 一括スケジュール入力ハンドラ
-  const handleBulkAdd = async (bulkItems: Partial<ScheduleItem>[]) => {
-    setIsSaving(true);
-    try {
-      const itemsToCreate = bulkItems.map((b, idx) => ({
-        schedule_id: `item-${Date.now()}-${idx}`,
+    if (editingItem) {
+      const updatedItems = items.map(i =>
+        i.schedule_id === editingItem.schedule_id ? { ...i, ...data } : i
+      );
+      const recalculated = recalculateSchedule(updatedItems, project.start_date);
+      setItems(recalculated);
+    } else {
+      const maxSort = items.length > 0 ? Math.max(...items.map(i => i.sort_order || 0)) : 0;
+      const newItem: ScheduleItem = {
+        schedule_id: `item-${Date.now()}`,
         project_id: project.project_id,
-        parent_id: b.parent_id || null,
-        item_type: 'task' as ScheduleItemType,
-        name: b.name || '工程',
-        duration_business_days: b.duration_business_days || 1,
-        start_date: project.start_date,
-        end_date: project.start_date,
-        assignee: b.assignee || '',
-        sort_order: b.sort_order || items.length + idx + 1,
-        auto_schedule: true,
-        dependency_id: null,
-        memo: '',
-      }));
-
-      await bulkCreateScheduleItemsAction(project.project_id, itemsToCreate);
-      const nextList = [...items, ...(itemsToCreate as ScheduleItem[])];
+        parent_id: data.parent_id || null,
+        item_type: data.item_type || 'task',
+        name: data.name || '新規工程',
+        duration_business_days: data.duration_business_days || 1,
+        start_date: data.start_date || project.start_date,
+        end_date: data.end_date || project.start_date,
+        assignee: data.assignee || '',
+        sort_order: maxSort + 1,
+        auto_schedule: data.auto_schedule ?? true,
+        dependency_id: data.dependency_id || null,
+        memo: data.memo || '',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const nextList = [...items, newItem];
       const recalculated = recalculateSchedule(nextList, project.start_date);
       setItems(recalculated);
-    } catch (err: any) {
-      alert('一括追加に失敗しました: ' + err.message);
-    } finally {
-      setIsSaving(false);
     }
+    setHasUnsavedChanges(true);
   };
 
-  // 工程の削除
-  const handleDeleteItem = async (id: string) => {
+  // 一括スケジュール入力ハンドラ (0ms即時反映)
+  const handleBulkAdd = async (bulkItems: Partial<ScheduleItem>[]) => {
+    const itemsToCreate = bulkItems.map((b, idx) => ({
+      schedule_id: `item-${Date.now()}-${idx}`,
+      project_id: project.project_id,
+      parent_id: b.parent_id || null,
+      item_type: 'task' as ScheduleItemType,
+      name: b.name || '工程',
+      duration_business_days: b.duration_business_days || 1,
+      start_date: project.start_date,
+      end_date: project.start_date,
+      assignee: b.assignee || '',
+      sort_order: b.sort_order || items.length + idx + 1,
+      auto_schedule: true,
+      dependency_id: null,
+      memo: '',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }));
+
+    const nextList = [...items, ...(itemsToCreate as ScheduleItem[])];
+    const recalculated = recalculateSchedule(nextList, project.start_date);
+    setItems(recalculated);
+    setHasUnsavedChanges(true);
+  };
+
+  // 工程の削除 (0ms即時反映)
+  const handleDeleteItem = (id: string) => {
     const item = items.find(i => i.schedule_id === id);
     if (!item) return;
 
@@ -399,38 +387,33 @@ export function GanttContainer({
       return;
     }
 
-    setIsSaving(true);
-    try {
-      await deleteScheduleItemAction(id, project.project_id);
-      const nextList = items.filter(i => i.schedule_id !== id && i.parent_id !== id);
-      const recalculated = recalculateSchedule(nextList, project.start_date);
-      setItems(recalculated);
-    } catch (err: any) {
-      alert('削除に失敗しました: ' + err.message);
-    } finally {
-      setIsSaving(false);
-    }
+    const nextList = items.filter(i => i.schedule_id !== id && i.parent_id !== id);
+    const recalculated = recalculateSchedule(nextList, project.start_date);
+    setItems(recalculated);
+    setHasUnsavedChanges(true);
   };
 
-  // 工程の複製
-  const handleDuplicateItem = async (id: string) => {
-    setIsSaving(true);
-    try {
-      const copy = await duplicateScheduleItemAction(id, project.project_id);
-      if (copy) {
-        const nextList = [...items, copy];
-        const recalculated = recalculateSchedule(nextList, project.start_date);
-        setItems(recalculated);
-      }
-    } catch (err: any) {
-      alert('複製に失敗しました: ' + err.message);
-    } finally {
-      setIsSaving(false);
-    }
+  // 工程の複製 (0ms即時反映)
+  const handleDuplicateItem = (id: string) => {
+    const original = items.find(i => i.schedule_id === id);
+    if (!original) return;
+
+    const copy: ScheduleItem = {
+      ...original,
+      schedule_id: `item-${Date.now()}`,
+      name: `${original.name} (コピー)`,
+      sort_order: original.sort_order + 0.5,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    const nextList = [...items, copy];
+    const recalculated = recalculateSchedule(nextList, project.start_date);
+    setItems(recalculated);
+    setHasUnsavedChanges(true);
   };
 
-  // 並べ替え（上下）
-  const handleMoveItem = async (id: string, direction: 'up' | 'down') => {
+  // 並べ替え（上下・0ms即時反映）
+  const handleMoveItem = (id: string, direction: 'up' | 'down') => {
     const idx = items.findIndex(i => i.schedule_id === id);
     if (idx === -1) return;
     if (direction === 'up' && idx === 0) return;
@@ -448,13 +431,7 @@ export function GanttContainer({
 
     const recalculated = recalculateSchedule(nextList, project.start_date);
     setItems(recalculated);
-
-    setIsSaving(true);
-    try {
-      await updateMultipleScheduleItemsAction(project.project_id, recalculated);
-    } finally {
-      setIsSaving(false);
-    }
+    setHasUnsavedChanges(true);
   };
 
   // TODO関連
@@ -534,59 +511,44 @@ export function GanttContainer({
     }, 1000);
   };
 
-  // 作業日程・余白（バッファ）の調整ハンドラ
-  const handleSaveTaskSchedule = async (scheduleId: string, updates: Partial<ScheduleItem>) => {
-    setIsSaving(true);
-    try {
-      await updateScheduleItemAction(scheduleId, updates);
-      const nextList = items.map(i => (i.schedule_id === scheduleId ? { ...i, ...updates } : i));
-      const recalculated = recalculateSchedule(nextList, project.start_date);
-      setItems(recalculated);
-      await updateMultipleScheduleItemsAction(project.project_id, recalculated);
-    } catch (err: any) {
-      alert('日程の更新に失敗しました: ' + err.message);
-    } finally {
-      setIsSaving(false);
-    }
+  // 作業日程・余白（バッファ）の調整ハンドラ (0ms即時反映)
+  const handleSaveTaskSchedule = (scheduleId: string, updates: Partial<ScheduleItem>) => {
+    const nextList = items.map(i => (i.schedule_id === scheduleId ? { ...i, ...updates } : i));
+    const recalculated = recalculateSchedule(nextList, project.start_date);
+    setItems(recalculated);
+    setHasUnsavedChanges(true);
   };
 
-  // 親階層（フォルダ）の紐付け変更（個別または一括移動）
-  const handleChangeParent = async (itemIds: string[], newParentId: string | null) => {
-    setIsSaving(true);
-    try {
-      const nextList = items.map(item => {
-        if (itemIds.includes(item.schedule_id)) {
-          return { ...item, parent_id: newParentId };
-        }
-        return item;
-      });
-
-      for (const id of itemIds) {
-        await updateScheduleItemAction(id, { parent_id: newParentId });
+  // 親階層（フォルダ）の紐付け変更（個別または一括移動・0ms即時反映）
+  const handleChangeParent = (itemIds: string[], newParentId: string | null) => {
+    const nextList = items.map(item => {
+      if (itemIds.includes(item.schedule_id)) {
+        return { ...item, parent_id: newParentId };
       }
+      return item;
+    });
 
-      const recalculated = recalculateSchedule(nextList, project.start_date);
-      setItems(recalculated);
-      await updateMultipleScheduleItemsAction(project.project_id, recalculated);
-    } catch (err: any) {
-      alert('親階層の紐付け変更に失敗しました: ' + err.message);
-    } finally {
-      setIsSaving(false);
-    }
+    const recalculated = recalculateSchedule(nextList, project.start_date);
+    setItems(recalculated);
+    setHasUnsavedChanges(true);
   };
 
-  // カレンダーガントバーのドラッグ＆ドロップ横移動ハンドラ
-  const handleDragMoveItem = async (item: ScheduleItem, deltaDays: number) => {
+  // カレンダーガントバーのドラッグ＆ドロップ横移動ハンドラ (0ms即時反映)
+  const handleDragMoveItem = (item: ScheduleItem, deltaDays: number) => {
     if (deltaDays === 0) return;
     try {
       const curStart = parseISO(item.start_date || project.start_date);
       const newStartDate = addDays(curStart, deltaDays);
       const newStartStr = format(newStartDate, 'yyyy-MM-dd');
 
-      await handleSaveTaskSchedule(item.schedule_id, {
-        start_date: newStartStr,
-        auto_schedule: false, // ドラッグで移動した位置に日付を固定
-      });
+      const nextList = items.map(i =>
+        i.schedule_id === item.schedule_id
+          ? { ...i, start_date: newStartStr, auto_schedule: false }
+          : i
+      );
+      const recalculated = recalculateSchedule(nextList, project.start_date);
+      setItems(recalculated);
+      setHasUnsavedChanges(true);
     } catch (err: any) {
       console.error('Drag move failed', err);
     }
@@ -612,6 +574,8 @@ export function GanttContainer({
         borderStrength={borderStrength}
         setBorderStrength={setBorderStrength}
         isSaving={isSaving}
+        hasUnsavedChanges={hasUnsavedChanges}
+        onSave={handleSaveAll}
         uncompletedTodoCount={todos.filter(t => t.status === 'open').length}
         calendarRange={activeRange}
         setCalendarRange={setCustomRange}

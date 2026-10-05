@@ -12,6 +12,7 @@ import {
   appendSheetRow,
   updateSheetRow,
   deleteSheetRow,
+  saveProjectScheduleItemsBatch,
 } from '../google-sheets/sheets-service';
 import {
   MockProjectRepository,
@@ -163,14 +164,10 @@ export class GoogleSheetsScheduleRepository implements IScheduleRepository {
   }
 
   async updateMultipleScheduleItems(items: ScheduleItem[]): Promise<boolean> {
-    const now = new Date().toISOString();
-    for (const item of items) {
-      await updateSheetRow(SHEET_NAMES.SCHEDULE_ITEMS, item.schedule_id, {
-        ...item,
-        updated_at: now,
-      });
-    }
-    return true;
+    if (items.length === 0) return true;
+    const projectId = items[0].project_id;
+    await this.fallbackMock.updateMultipleScheduleItems(items);
+    return await saveProjectScheduleItemsBatch(projectId, items);
   }
 
   async deleteScheduleItem(id: string): Promise<boolean> {
