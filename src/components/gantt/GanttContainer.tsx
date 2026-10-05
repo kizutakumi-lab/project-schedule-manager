@@ -12,6 +12,7 @@ import { GanttToolbar } from './GanttToolbar';
 import { GanttCalendarHeader, GridBorderStrength } from './GanttCalendarHeader';
 import { GanttLeftTree } from './GanttLeftTree';
 import { GanttTimeline } from './GanttTimeline';
+import { GanttMemoSummaryBar } from './GanttMemoSummaryBar';
 import { ItemEditModal } from './ItemEditModal';
 import { BulkAddModal } from './BulkAddModal';
 import { ConflictWarningModal } from './ConflictWarningModal';
@@ -552,6 +553,16 @@ export function GanttContainer({
         onResetCalendarRange={() => setCustomRange(null)}
       />
 
+      {/* ご要望対応: ヘッダーと工程の間にメモ・日程消化率サマリーバーを設置（スケジュール3行分相当・リサイズ可能） */}
+      <GanttMemoSummaryBar
+        project={project}
+        startDate={activeRange.start}
+        endDate={activeRange.end}
+        memo={projectMemo}
+        onMemoChange={handleProjectMemoChange}
+        borderStrength={borderStrength}
+      />
+
       {/* ガントチャートメインボディ（左ツリー固定 ＋ 右タイムライン横スクロール） */}
       <div className="flex-1 flex overflow-hidden">
         {/* 左側ツリー */}
@@ -589,8 +600,6 @@ export function GanttContainer({
               setIsTodoEditOpen(true);
             }}
             onDeleteAssigneeTodos={handleDeleteAssigneeTodos}
-            projectMemo={projectMemo}
-            onProjectMemoChange={handleProjectMemoChange}
           />
         </div>
 

@@ -32,8 +32,6 @@ interface GanttLeftTreeProps {
   assigneeGroups: [string, Todo[]][];
   onAddTodoForAssignee: (assignee: string) => void;
   onDeleteAssigneeTodos: (assignee: string) => void;
-  projectMemo: string;
-  onProjectMemoChange: (memo: string) => void;
 }
 
 export function GanttLeftTree({
@@ -51,8 +49,6 @@ export function GanttLeftTree({
   assigneeGroups,
   onAddTodoForAssignee,
   onDeleteAssigneeTodos,
-  projectMemo,
-  onProjectMemoChange,
 }: GanttLeftTreeProps) {
   // インライン編集中のID（name, assignee）
   const [editingNameId, setEditingNameId] = useState<string | null>(null);
@@ -337,24 +333,6 @@ export function GanttLeftTree({
             ))}
           </>
         )}
-
-        {/* ご要望: TODOの下にメモ帳的に考えなければいけないことを書き記せるスペース */}
-        <div className={`border-t-2 border-slate-700 bg-amber-50/50 p-3`}>
-          <div className="flex items-center justify-between mb-1.5">
-            <div className="flex items-center space-x-1.5 font-bold text-slate-800 text-xs">
-              <FileText className="w-3.5 h-3.5 text-amber-600" />
-              <span>案件検討メモ・思考スペース</span>
-            </div>
-            <span className="text-[10px] text-slate-400 font-medium">リアルタイム保存</span>
-          </div>
-          <textarea
-            value={projectMemo}
-            onChange={e => onProjectMemoChange(e.target.value)}
-            placeholder="考えなければいけないこと、検討事項、クライアントへの確認事項、備忘録などを自由にメモ..."
-            rows={5}
-            className="w-full text-xs p-2.5 rounded-md border border-amber-200 bg-white text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-amber-500 resize-y leading-relaxed shadow-2xs font-sans"
-          />
-        </div>
       </div>
     </div>
   );
