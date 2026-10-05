@@ -136,3 +136,21 @@ export function countBusinessDays(startDateStr: string, endDateStr: string): num
   }
   return count;
 }
+
+/**
+ * 指定日から n 営業日後の営業日を取得（余白・バッファ日数計算用）
+ */
+export function addBusinessDays(startDateStr: string, businessDays: number): string {
+  if (businessDays <= 0) return startDateStr;
+  let cur = parseISO(startDateStr);
+  if (!isValid(cur)) return startDateStr;
+
+  let remaining = businessDays;
+  while (remaining > 0) {
+    cur = addDays(cur, 1);
+    if (isBusinessDay(cur)) {
+      remaining--;
+    }
+  }
+  return format(cur, 'yyyy-MM-dd');
+}

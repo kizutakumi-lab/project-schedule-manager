@@ -1,5 +1,11 @@
 import { ScheduleItem } from '@/types';
-import { calculateEndDate, getNextBusinessDay, getNextOrCurrentBusinessDay, countBusinessDays } from './business-days';
+import {
+  calculateEndDate,
+  getNextBusinessDay,
+  getNextOrCurrentBusinessDay,
+  countBusinessDays,
+  addBusinessDays,
+} from './business-days';
 
 /**
  * 工程リストを受け取り、auto_schedule や依存関係に基づいて
@@ -48,6 +54,11 @@ export function recalculateSchedule(
         } else {
           // 最初の工程の場合：案件開始日（営業日）
           taskStartDate = baseStartDate;
+        }
+
+        // 余白・バッファ日数（営業日）が指定されている場合、その分だけ開始日を後ろ倒し
+        if (current.buffer_days && current.buffer_days > 0) {
+          taskStartDate = addBusinessDays(taskStartDate, current.buffer_days);
         }
       } else {
         // 手動日程の場合：指定された開始日を営業日調整（もし土日祝日なら直近営業日）

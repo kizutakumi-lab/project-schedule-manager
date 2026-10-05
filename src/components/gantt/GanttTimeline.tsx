@@ -15,6 +15,7 @@ interface GanttTimelineProps {
   borderStrength: GridBorderStrength;
   assigneeGroups: [string, Todo[]][];
   onTodoClick: (todo: Todo) => void;
+  onCellClick?: (item: ScheduleItem, dateStr: string) => void;
 }
 
 export function GanttTimeline({
@@ -27,6 +28,7 @@ export function GanttTimeline({
   borderStrength,
   assigneeGroups,
   onTodoClick,
+  onCellClick,
 }: GanttTimelineProps) {
   if (calendarDays.length === 0) return null;
 
@@ -160,15 +162,33 @@ export function GanttTimeline({
 
           return (
             <div key={item.schedule_id} className={rowBgClass}>
+              {/* 各日付セルのクリック領域（特定日付をクリックして作業IN日に設定） */}
+              {onCellClick && item.item_type === 'task' && (
+                <div className="absolute inset-0 flex pointer-events-auto">
+                  {calendarDays.map(day => (
+                    <div
+                      key={day.dateStr}
+                      style={{ width: `${dayCellWidth}px` }}
+                      onClick={() => onCellClick(item, day.dateStr)}
+                      className="h-full shrink-0 hover:bg-blue-100/40 cursor-pointer transition-colors"
+                      title={`${item.name}: ${day.dateStr} を作業IN日に指定`}
+                    />
+                  ))}
+                </div>
+              )}
+
               {isVisible && leftIndex >= 0 && (
                 <div
                   style={{
                     left: `${leftIndex * dayCellWidth}px`,
                     width: `${span * dayCellWidth}px`,
                   }}
-                  onClick={() => onEditItem(item)}
-                  className={`absolute top-1.5 bottom-1.5 rounded-xs border shadow-2xs cursor-pointer flex items-center justify-between px-2 text-[11px] truncate transition-all hover:brightness-95 group/bar ${colorTheme.bg} ${colorTheme.border} ${colorTheme.text}`}
-                  title={`${item.name} (${item.start_date} 〜 ${item.end_date} : ${item.duration_business_days || 0}営業日)`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEditItem(item);
+                  }}
+                  className={`absolute top-1.5 bottom-1.5 rounded-xs border shadow-2xs cursor-pointer flex items-center justify-between px-2 text-[11px] truncate transition-all hover:brightness-95 group/bar z-10 ${colorTheme.bg} ${colorTheme.border} ${colorTheme.text}`}
+                  title={`${item.name} (${item.start_date} 〜 ${item.end_date} : ${item.duration_business_days || 0}営業日) - クリックして作業IN日・余白を調整`}
                 >
                   <span className="truncate pr-1 font-medium">
                     {item.name}

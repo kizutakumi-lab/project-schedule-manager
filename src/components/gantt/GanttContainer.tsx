@@ -14,6 +14,7 @@ import { GanttLeftTree } from './GanttLeftTree';
 import { GanttTimeline } from './GanttTimeline';
 import { GanttMemoSummaryBar } from './GanttMemoSummaryBar';
 import { ItemEditModal } from './ItemEditModal';
+import { TaskScheduleModal } from './TaskScheduleModal';
 import { BulkAddModal } from './BulkAddModal';
 import { ConflictWarningModal } from './ConflictWarningModal';
 import { TodoListModal } from '../todo/TodoListModal';
@@ -72,6 +73,11 @@ export function GanttContainer({
   const [isTodoEditOpen, setIsTodoEditOpen] = useState<boolean>(false);
   const [editingTodo, setEditingTodo] = useState<Todo | null>(null);
   const [isExportPdfOpen, setIsExportPdfOpen] = useState<boolean>(false);
+
+  // 作業日程・余白（バッファ）調整モーダル
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState<boolean>(false);
+  const [scheduleModalItem, setScheduleModalItem] = useState<ScheduleItem | null>(null);
+  const [scheduleModalClickedDate, setScheduleModalClickedDate] = useState<string | null>(null);
 
   // スクロール同期用参照
   const timelineScrollRef = useRef<HTMLDivElement>(null);
@@ -527,6 +533,22 @@ export function GanttContainer({
     }, 1000);
   };
 
+  // 作業日程・余白（バッファ）の調整ハンドラ
+  const handleSaveTaskSchedule = async (scheduleId: string, updates: Partial<ScheduleItem>) => {
+    setIsSaving(true);
+    try {
+      await updateScheduleItemAction(scheduleId, updates);
+      const nextList = items.map(i => (i.schedule_id === scheduleId ? { ...i, ...updates } : i));
+      const recalculated = recalculateSchedule(nextList, project.start_date);
+      setItems(recalculated);
+      await updateMultipleScheduleItemsAction(project.project_id, recalculated);
+    } catch (err: any) {
+      alert('日程の更新に失敗しました: ' + err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen bg-white overflow-hidden">
       {/* 統合1行ヘッダーツールバー */}
@@ -625,8 +647,19 @@ export function GanttContainer({
             visibleItemIds={visibleItemIds}
             collapsedIds={collapsedIds}
             onEditItem={item => {
-              setEditingItem(item);
-              setIsItemEditOpen(true);
+              if (item.item_type === 'task') {
+                setScheduleModalItem(item);
+                setScheduleModalClickedDate(null);
+                setIsScheduleModalOpen(true);
+              } else {
+                setEditingItem(item);
+                setIsItemEditOpen(true);
+              }
+            }}
+            onCellClick={(item, dateStr) => {
+              setScheduleModalItem(item);
+              setScheduleModalClickedDate(dateStr);
+              setIsScheduleModalOpen(true);
             }}
             borderStrength={borderStrength}
             assigneeGroups={assigneeGroups}
@@ -637,6 +670,19 @@ export function GanttContainer({
           />
         </div>
       </div>
+
+      {/* 作業日程・余白（バッファ）調整モーダル */}
+      <TaskScheduleModal
+        isOpen={isScheduleModalOpen}
+        onClose={() => {
+          setIsScheduleModalOpen(false);
+          setScheduleModalItem(null);
+          setScheduleModalClickedDate(null);
+        }}
+        item={scheduleModalItem}
+        clickedDateStr={scheduleModalClickedDate}
+        onSave={handleSaveTaskSchedule}
+      />
 
       {/* 各種モーダル */}
       <ItemEditModal

@@ -28,6 +28,7 @@ export interface ScheduleItem {
   sort_order: number;
   auto_schedule: boolean;
   dependency_id: string | null;
+  buffer_days?: number; // 前工程との余白・バッファ日数（営業日）
   memo: string;
   created_at: string;
   updated_at: string;
