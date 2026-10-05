@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Search,
   Filter,
@@ -54,6 +55,7 @@ export function ProjectList({
   const projects = controlledProjects !== undefined ? controlledProjects : internalProjects;
   const setProjects = controlledSetProjects !== undefined ? controlledSetProjects : setInternalProjects;
 
+  const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [clientFilter, setClientFilter] = useState<string>('all');
@@ -272,11 +274,13 @@ export function ProjectList({
                   return (
                     <tr
                       key={project.project_id}
-                      className="hover:bg-slate-50/70 transition-colors group"
+                      onClick={() => router.push(`/projects/${project.project_id}`)}
+                      className="hover:bg-blue-50/40 transition-colors group cursor-pointer"
                     >
                       <td className="py-3.5 px-4 font-semibold text-slate-900">
                         <Link
                           href={`/projects/${project.project_id}`}
+                          onClick={e => e.stopPropagation()}
                           className="hover:text-blue-600 hover:underline flex items-center space-x-2"
                         >
                           <span>{project.project_name}</span>
@@ -318,14 +322,16 @@ export function ProjectList({
                         <div className="flex items-center justify-end space-x-1">
                           <Link
                             href={`/projects/${project.project_id}`}
-                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                            onClick={e => e.stopPropagation()}
+                            className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-md transition-colors"
                             title="進行管理（ガントチャート）を開く"
                           >
                             <span className="sr-only">開く</span>
                             <ArrowRight className="w-4 h-4" />
                           </Link>
                           <button
-                            onClick={() => {
+                            onClick={e => {
+                              e.stopPropagation();
                               setEditingProject(project);
                               setIsModalOpen(true);
                             }}
@@ -335,7 +341,10 @@ export function ProjectList({
                             <Edit2 className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => handleDelete(project)}
+                            onClick={e => {
+                              e.stopPropagation();
+                              handleDelete(project);
+                            }}
                             className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
                             title="案件削除"
                           >
