@@ -1,8 +1,8 @@
 'use client';
 
-import React from 'react';
-import { CalendarDay, getBarPosition, getTaskColorTheme } from '@/lib/date-utils';
+import React, { useState } from 'react';
 import { ScheduleItem, Todo } from '@/types';
+import { CalendarDay, getBarPosition, getTaskColorTheme } from '@/lib/date-utils';
 import { GridBorderStrength } from './GanttCalendarHeader';
 
 interface GanttTimelineProps {
@@ -16,6 +16,7 @@ interface GanttTimelineProps {
   assigneeGroups: [string, Todo[]][];
   onTodoClick: (todo: Todo) => void;
   onCellClick?: (item: ScheduleItem, dateStr: string) => void;
+  onDragMoveItem?: (item: ScheduleItem, deltaDays: number) => void;
 }
 
 export function GanttTimeline({
@@ -29,7 +30,16 @@ export function GanttTimeline({
   assigneeGroups,
   onTodoClick,
   onCellClick,
+  onDragMoveItem,
 }: GanttTimelineProps) {
+  // ドラッグ＆ドロップ状態管理
+  const [activeDrag, setActiveDrag] = useState<{
+    itemId: string;
+    startX: number;
+    deltaDays: number;
+    hasMoved: boolean;
+  } | null>(null);
+
   if (calendarDays.length === 0) return null;
 
   const calendarStart = calendarDays[0].dateStr;
@@ -61,16 +71,65 @@ export function GanttTimeline({
         tasks.push(...getDescendantTasks(child.schedule_id));
       }
     }
-    return tasks.sort((a, b) => a.sort_order - b.sort_order);
+    return tasks;
+  };
+
+  // ドラッグ開始ハンドラ
+  const handleBarMouseDown = (e: React.MouseEvent, item: ScheduleItem) => {
+    e.stopPropagation();
+    if (item.item_type !== 'task') {
+      onEditItem(item);
+      return;
+    }
+
+    const startX = e.clientX;
+    let hasMoved = false;
+    let currentDelta = 0;
+
+    setActiveDrag({
+      itemId: item.schedule_id,
+      startX,
+      deltaDays: 0,
+      hasMoved: false,
+    });
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const diffX = moveEvent.clientX - startX;
+      if (Math.abs(diffX) > 4) {
+        hasMoved = true;
+      }
+      currentDelta = Math.round(diffX / dayCellWidth);
+      setActiveDrag({
+        itemId: item.schedule_id,
+        startX,
+        deltaDays: currentDelta,
+        hasMoved,
+      });
+    };
+
+    const handleMouseUp = () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      setActiveDrag(null);
+
+      if (hasMoved && currentDelta !== 0 && onDragMoveItem) {
+        onDragMoveItem(item, currentDelta);
+      } else if (!hasMoved) {
+        onEditItem(item);
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
   };
 
   return (
     <div
       style={{ width: `${timelineWidth}px` }}
-      className="relative select-none bg-white"
+      className="relative select-none"
     >
-      {/* 縦グリッド線レイヤー（土日祝日背景・今日のライン） */}
-      <div className="absolute inset-0 flex pointer-events-none z-0">
+      {/* 背景グリッド縦線 */}
+      <div className="absolute inset-0 flex pointer-events-none">
         {calendarDays.map(day => (
           <div
             key={day.dateStr}
@@ -104,7 +163,7 @@ export function GanttTimeline({
             rowBgClass += ' bg-slate-100/35';
           }
 
-          // 折りたたまれている親アイテムの場合：配下の子タスクを「横一列」に並べて描画！
+          // 折りたたまれている親アイテムの場合：配下の子タスクを「横一列」に並べて描画
           if ((isCategory || isGroup) && isCollapsed) {
             const childTasks = getDescendantTasks(item.schedule_id);
 
@@ -159,11 +218,13 @@ export function GanttTimeline({
           );
 
           const colorTheme = getTaskColorTheme(item.name, item.item_type);
+          const isDraggingThis = activeDrag?.itemId === item.schedule_id;
+          const currentLeft = (leftIndex + (isDraggingThis ? activeDrag.deltaDays : 0)) * dayCellWidth;
 
           return (
             <div key={item.schedule_id} className={rowBgClass}>
               {/* 各日付セルのクリック領域（特定日付をクリックして作業IN日に設定） */}
-              {onCellClick && item.item_type === 'task' && (
+              {onCellClick && item.item_type === 'task' && !activeDrag && (
                 <div className="absolute inset-0 flex pointer-events-auto">
                   {calendarDays.map(day => (
                     <div
@@ -177,26 +238,37 @@ export function GanttTimeline({
                 </div>
               )}
 
+              {/* ガントバー（ドラッグ＆ドロップで横移動可能 ＆ クリックで日程調整） */}
               {isVisible && leftIndex >= 0 && (
                 <div
                   style={{
-                    left: `${leftIndex * dayCellWidth}px`,
+                    left: `${currentLeft}px`,
                     width: `${span * dayCellWidth}px`,
                   }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onEditItem(item);
-                  }}
-                  className={`absolute top-1.5 bottom-1.5 rounded-xs border shadow-2xs cursor-pointer flex items-center justify-between px-2 text-[11px] truncate transition-all hover:brightness-95 group/bar z-10 ${colorTheme.bg} ${colorTheme.border} ${colorTheme.text}`}
-                  title={`${item.name} (${item.start_date} 〜 ${item.end_date} : ${item.duration_business_days || 0}営業日) - クリックして作業IN日・余白を調整`}
+                  onMouseDown={(e) => handleBarMouseDown(e, item)}
+                  className={`absolute top-1.5 bottom-1.5 rounded-xs border shadow-2xs flex items-center justify-between px-2 text-[11px] truncate transition-all group/bar z-10 ${
+                    isDraggingThis
+                      ? 'cursor-grabbing z-30 shadow-lg ring-2 ring-blue-500 scale-[1.02] opacity-90'
+                      : 'cursor-grab hover:brightness-95'
+                  } ${colorTheme.bg} ${colorTheme.border} ${colorTheme.text}`}
+                  title={`${item.name} (${item.start_date} 〜 ${item.end_date} : ${item.duration_business_days || 0}営業日) - ドラッグして横移動、クリックで日程調整`}
                 >
-                  <span className="truncate pr-1 font-medium">
+                  <span className="truncate pr-1 font-medium pointer-events-none">
                     {item.name}
                   </span>
                   {item.duration_business_days > 0 && span * dayCellWidth > 45 && (
-                    <span className="shrink-0 text-[10px] opacity-85">
-                      {item.duration_business_days}日
+                    <span className="shrink-0 text-[10px] opacity-85 pointer-events-none">
+                      {isDraggingThis && activeDrag.deltaDays !== 0
+                        ? `${activeDrag.deltaDays > 0 ? `+${activeDrag.deltaDays}` : activeDrag.deltaDays}日`
+                        : `${item.duration_business_days}日`}
                     </span>
+                  )}
+
+                  {/* ドラッグ移動中のプレビューガイド */}
+                  {isDraggingThis && activeDrag.deltaDays !== 0 && (
+                    <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] font-bold px-2 py-0.5 rounded-sm shadow-md whitespace-nowrap z-40 pointer-events-none">
+                      {activeDrag.deltaDays > 0 ? `+${activeDrag.deltaDays}日` : `${activeDrag.deltaDays}日`} 移動
+                    </div>
                   )}
                 </div>
               )}
@@ -204,17 +276,17 @@ export function GanttTimeline({
           );
         })}
 
-        {/* 担当者別 TODO タイムライン（左ツリーのTODO行と完全に高さ・行揃え同期） */}
+        {/* 担当者別 TODO タイムライン */}
         {assigneeGroups.length > 0 && (
           <>
-            {/* TODOセクションヘッダー行（h-8 box-border） */}
+            {/* TODOセクションヘッダー行 */}
             <div className={`h-8 box-border relative flex items-center bg-slate-200/90 border-t-2 border-t-slate-700 border-b ${borderCol}`}>
               <div className="px-3 text-[11px] font-semibold text-slate-600">
                 期日カレンダー
               </div>
             </div>
 
-            {/* 各担当者のTODO期日セル行（h-10 box-border） */}
+            {/* 各担当者のTODO期日セル行 */}
             {assigneeGroups.map(([assignee, list]) => {
               const todayStr = new Date().toISOString().split('T')[0];
 

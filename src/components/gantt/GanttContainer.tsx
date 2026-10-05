@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Project, ScheduleItem, Todo, ScheduleItemType } from '@/types';
+import { parseISO, format, addDays } from 'date-fns';
 import {
   generateCalendarDays,
   groupCalendarByMonth,
@@ -549,6 +550,48 @@ export function GanttContainer({
     }
   };
 
+  // 親階層（フォルダ）の紐付け変更（個別または一括移動）
+  const handleChangeParent = async (itemIds: string[], newParentId: string | null) => {
+    setIsSaving(true);
+    try {
+      const nextList = items.map(item => {
+        if (itemIds.includes(item.schedule_id)) {
+          return { ...item, parent_id: newParentId };
+        }
+        return item;
+      });
+
+      for (const id of itemIds) {
+        await updateScheduleItemAction(id, { parent_id: newParentId });
+      }
+
+      const recalculated = recalculateSchedule(nextList, project.start_date);
+      setItems(recalculated);
+      await updateMultipleScheduleItemsAction(project.project_id, recalculated);
+    } catch (err: any) {
+      alert('親階層の紐付け変更に失敗しました: ' + err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // カレンダーガントバーのドラッグ＆ドロップ横移動ハンドラ
+  const handleDragMoveItem = async (item: ScheduleItem, deltaDays: number) => {
+    if (deltaDays === 0) return;
+    try {
+      const curStart = parseISO(item.start_date || project.start_date);
+      const newStartDate = addDays(curStart, deltaDays);
+      const newStartStr = format(newStartDate, 'yyyy-MM-dd');
+
+      await handleSaveTaskSchedule(item.schedule_id, {
+        start_date: newStartStr,
+        auto_schedule: false, // ドラッグで移動した位置に日付を固定
+      });
+    } catch (err: any) {
+      console.error('Drag move failed', err);
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen bg-white overflow-hidden">
       {/* 統合1行ヘッダーツールバー */}
@@ -611,6 +654,7 @@ export function GanttContainer({
               setIsItemEditOpen(true);
             }}
             onInsertItemAfter={handleInsertItemAfter}
+            onChangeParent={handleChangeParent}
             onDurationChange={handleDurationChange}
             onNameChange={handleNameChange}
             onAssigneeChange={handleAssigneeChange}
@@ -639,7 +683,7 @@ export function GanttContainer({
             borderStrength={borderStrength}
           />
 
-          {/* ガントバー（折りたたみ時は横一列サマリー描画、最下部に担当者別TODO期日セルを描画） */}
+          {/* ガントバー（折りたたみ時は横一列サマリー描画、最下部に担当者別TODO期日セルを描画、ドラッグ移動対応） */}
           <GanttTimeline
             items={items}
             calendarDays={calendarDays}
@@ -661,6 +705,7 @@ export function GanttContainer({
               setScheduleModalClickedDate(dateStr);
               setIsScheduleModalOpen(true);
             }}
+            onDragMoveItem={handleDragMoveItem}
             borderStrength={borderStrength}
             assigneeGroups={assigneeGroups}
             onTodoClick={todo => {
