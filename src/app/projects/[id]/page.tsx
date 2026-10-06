@@ -12,16 +12,17 @@ interface ProjectDetailPageProps {
 
 export default async function ProjectDetailPage({ params }: ProjectDetailPageProps) {
   const { id } = await params;
-  const project = await fetchProjectByIdAction(id);
+
+  // ウォーターフォールを解消し、プロジェクト情報・工程・TODOを並列で高速取得
+  const [project, items, todos] = await Promise.all([
+    fetchProjectByIdAction(id),
+    fetchScheduleItemsAction(id),
+    fetchTodosAction(id),
+  ]);
 
   if (!project) {
     notFound();
   }
-
-  const [items, todos] = await Promise.all([
-    fetchScheduleItemsAction(id),
-    fetchTodosAction(id),
-  ]);
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-white flex flex-col">

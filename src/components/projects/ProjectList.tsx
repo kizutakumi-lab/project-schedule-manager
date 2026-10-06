@@ -16,6 +16,7 @@ import {
   Plus,
   Clock,
   Layers,
+  Loader2,
 } from 'lucide-react';
 import { Project, ProjectStatus } from '@/types';
 import { ProjectModal } from './ProjectModal';
@@ -63,6 +64,7 @@ export function ProjectList({
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [navigatingId, setNavigatingId] = useState<string | null>(null);
 
   // ユニークなクライアントと担当者のリスト
   const clients = useMemo(() => {
@@ -271,20 +273,32 @@ export function ProjectList({
                       })
                     : '-';
 
+                  const isNavigating = navigatingId === project.project_id;
+
                   return (
                     <tr
                       key={project.project_id}
-                      onClick={() => router.push(`/projects/${project.project_id}`)}
-                      className="hover:bg-blue-50/40 transition-colors group cursor-pointer"
+                      onClick={() => {
+                        setNavigatingId(project.project_id);
+                        router.push(`/projects/${project.project_id}`);
+                      }}
+                      className={`hover:bg-blue-50/40 transition-colors group cursor-pointer ${
+                        isNavigating ? 'bg-blue-50/60' : ''
+                      }`}
                     >
                       <td className="py-3.5 px-4 font-semibold text-slate-900">
                         <Link
                           href={`/projects/${project.project_id}`}
-                          onClick={e => e.stopPropagation()}
-                          className="hover:text-blue-600 hover:underline flex items-center space-x-2"
+                          prefetch={true}
+                          onClick={() => setNavigatingId(project.project_id)}
+                          className="hover:text-blue-600 hover:underline inline-flex items-center space-x-2"
                         >
                           <span>{project.project_name}</span>
-                          <ArrowRight className="w-3.5 h-3.5 text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          {isNavigating ? (
+                            <Loader2 className="w-3.5 h-3.5 text-blue-600 animate-spin shrink-0" />
+                          ) : (
+                            <ArrowRight className="w-3.5 h-3.5 text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                          )}
                         </Link>
                       </td>
                       <td className="py-3.5 px-4">
@@ -322,12 +336,17 @@ export function ProjectList({
                         <div className="flex items-center justify-end space-x-1">
                           <Link
                             href={`/projects/${project.project_id}`}
-                            onClick={e => e.stopPropagation()}
+                            prefetch={true}
+                            onClick={() => setNavigatingId(project.project_id)}
                             className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-md transition-colors"
                             title="進行管理（ガントチャート）を開く"
                           >
                             <span className="sr-only">開く</span>
-                            <ArrowRight className="w-4 h-4" />
+                            {isNavigating ? (
+                              <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+                            ) : (
+                              <ArrowRight className="w-4 h-4" />
+                            )}
                           </Link>
                           <button
                             onClick={e => {
