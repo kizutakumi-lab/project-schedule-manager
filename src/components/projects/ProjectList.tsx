@@ -1,8 +1,6 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import {
   Search,
   Filter,
@@ -56,7 +54,6 @@ export function ProjectList({
   const projects = controlledProjects !== undefined ? controlledProjects : internalProjects;
   const setProjects = controlledSetProjects !== undefined ? controlledSetProjects : setInternalProjects;
 
-  const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [clientFilter, setClientFilter] = useState<string>('all');
@@ -274,22 +271,22 @@ export function ProjectList({
                     : '-';
 
                   const isNavigating = navigatingId === project.project_id;
+                  const projectUrl = `/projects/${project.project_id}`;
 
                   return (
                     <tr
                       key={project.project_id}
                       onClick={() => {
                         setNavigatingId(project.project_id);
-                        router.push(`/projects/${project.project_id}`);
+                        window.location.href = projectUrl;
                       }}
                       className={`hover:bg-blue-50/40 transition-colors group cursor-pointer ${
                         isNavigating ? 'bg-blue-50/60' : ''
                       }`}
                     >
                       <td className="py-3.5 px-4 font-semibold text-slate-900">
-                        <Link
-                          href={`/projects/${project.project_id}`}
-                          prefetch={true}
+                        <a
+                          href={projectUrl}
                           onClick={() => setNavigatingId(project.project_id)}
                           className="hover:text-blue-600 hover:underline inline-flex items-center space-x-2"
                         >
@@ -299,7 +296,7 @@ export function ProjectList({
                           ) : (
                             <ArrowRight className="w-3.5 h-3.5 text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
                           )}
-                        </Link>
+                        </a>
                       </td>
                       <td className="py-3.5 px-4">
                         <div className="flex items-center space-x-1 text-slate-700">
@@ -334,9 +331,8 @@ export function ProjectList({
                       </td>
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end space-x-1">
-                          <Link
-                            href={`/projects/${project.project_id}`}
-                            prefetch={true}
+                          <a
+                            href={projectUrl}
                             onClick={() => setNavigatingId(project.project_id)}
                             className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-md transition-colors"
                             title="進行管理（ガントチャート）を開く"
@@ -347,7 +343,7 @@ export function ProjectList({
                             ) : (
                               <ArrowRight className="w-4 h-4" />
                             )}
-                          </Link>
+                          </a>
                           <button
                             onClick={e => {
                               e.stopPropagation();
