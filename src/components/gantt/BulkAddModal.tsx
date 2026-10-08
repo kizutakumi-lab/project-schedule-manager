@@ -10,10 +10,9 @@ import {
   BookmarkPlus,
   Trash2,
   Settings,
-  ChevronDown,
-  Layers,
-  UserCheck,
-  Split,
+  RotateCcw,
+  Calendar,
+  UserPlus,
 } from 'lucide-react';
 import { ScheduleItem } from '@/types';
 import { parseBulkScheduleInput } from '@/lib/schedule-engine';
@@ -22,7 +21,12 @@ import {
   getSavedTemplates,
   saveCustomTemplate,
   deleteCustomTemplate,
+  resetTemplatesToDefault,
 } from '@/lib/templates';
+import {
+  getAssigneeOptions,
+  addAssigneeOption,
+} from '@/lib/assignees';
 
 interface BulkAddModalProps {
   isOpen: boolean;
@@ -32,6 +36,7 @@ interface BulkAddModalProps {
   allItems: ScheduleItem[];
   defaultParentId?: string | null;
   clientName?: string;
+  projectStartDate?: string;
 }
 
 export function BulkAddModal({
@@ -42,6 +47,7 @@ export function BulkAddModal({
   allItems,
   defaultParentId = null,
   clientName = 'クライアント',
+  projectStartDate,
 }: BulkAddModalProps) {
   const [templates, setTemplates] = useState<ScheduleTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
@@ -49,8 +55,13 @@ export function BulkAddModal({
   const [newTemplateName, setNewTemplateName] = useState('');
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
 
-  // 親指定モード: 'existing' (既存の親階層) | 'new' (新規フォルダを作成)
-  const [parentMode, setParentMode] = useState<'existing' | 'new'>(
+  // 担当者候補一覧
+  const [assigneeOptions, setAssigneeOptions] = useState<string[]>([]);
+  const [newAssigneeInput, setNewAssigneeInput] = useState('');
+  const [isAddingAssignee, setIsAddingAssignee] = useState(false);
+
+  // 親指定モード: 'new' (新規フォルダを作成) | 'existing' (既存の親階層)
+  const [parentMode, setParentMode] = useState<'new' | 'existing'>(
     defaultParentId ? 'existing' : 'new'
   );
   const [parentId, setParentId] = useState<string | null>(defaultParentId);
@@ -60,27 +71,34 @@ export function BulkAddModal({
   const [newParentName, setNewParentName] = useState('アニメーション制作');
   const [newParentBelongTo, setNewParentBelongTo] = useState<string | null>(null);
 
+  // 作業開始日の指定モード: 'specified' (指定日/キックオフ日) | 'continue' (直前工程の後)
+  const defaultInitDate = projectStartDate || new Date().toISOString().split('T')[0];
+  const [startMode, setStartMode] = useState<'specified' | 'continue'>('specified');
+  const [specifiedStartDate, setSpecifiedStartDate] = useState<string>(defaultInitDate);
+
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
 
-  // テンプレート読み込み
-  const reloadTemplates = () => {
+  // テンプレート & 担当者読み込み
+  const reloadData = () => {
     const list = getSavedTemplates();
     setTemplates(list);
-    return list;
+    const assignees = getAssigneeOptions(clientName);
+    setAssigneeOptions(assignees);
+    return { list, assignees };
   };
 
   useEffect(() => {
     if (isOpen) {
-      const list = reloadTemplates();
-      // デフォルトテンプレートを初期選択
+      const { list } = reloadData();
       if (list.length > 0 && !inputText) {
         applyTemplate(list[0]);
       }
+      setSpecifiedStartDate(projectStartDate || new Date().toISOString().split('T')[0]);
     }
-  }, [isOpen]);
+  }, [isOpen, projectStartDate]);
 
   if (!isOpen) return null;
 
@@ -95,7 +113,6 @@ export function BulkAddModal({
     setSelectedTemplateId(tpl.id);
     setNewParentType(tpl.parentType);
     setNewParentName(tpl.defaultCategoryName);
-    // クライアント名を案件のクライアント名に自然に置換
     let content = tpl.content;
     if (clientName && clientName !== 'クライアント') {
       content = content.replace(/クライアント/g, clientName);
@@ -124,20 +141,39 @@ export function BulkAddModal({
 
     setNewTemplateName('');
     setIsSavingTemplate(false);
-    reloadTemplates();
+    reloadData();
     setSelectedTemplateId(saved.id);
     setSuccessNotice(`テンプレート「${saved.name}」を保存しました！`);
     setTimeout(() => setSuccessNotice(null), 3000);
   };
 
-  // テンプレート削除
+  // テンプレート削除（標準・カスタム問わず可能）
   const handleDeleteTemplate = (id: string, name: string) => {
     if (!confirm(`テンプレート「${name}」を削除してもよろしいですか？`)) return;
     deleteCustomTemplate(id);
-    const updated = reloadTemplates();
-    if (selectedTemplateId === id && updated.length > 0) {
-      applyTemplate(updated[0]);
+    const { list } = reloadData();
+    if (selectedTemplateId === id && list.length > 0) {
+      applyTemplate(list[0]);
+    } else if (list.length === 0) {
+      setSelectedTemplateId('');
     }
+  };
+
+  // テンプレート初期化リセット
+  const handleResetTemplates = () => {
+    if (!confirm('テンプレートを初期標準セットに戻しますか？')) return;
+    const resetList = resetTemplatesToDefault();
+    setTemplates(resetList);
+    if (resetList.length > 0) applyTemplate(resetList[0]);
+  };
+
+  // 担当者候補の新規追加
+  const handleAddAssignee = () => {
+    if (!newAssigneeInput.trim()) return;
+    const updated = addAssigneeOption(newAssigneeInput.trim(), clientName);
+    setAssigneeOptions(updated);
+    setNewAssigneeInput('');
+    setIsAddingAssignee(false);
   };
 
   // 担当者クイック挿入
@@ -181,7 +217,6 @@ export function BulkAddModal({
 
       // 新規フォルダ（大項目・中項目）を同時作成する場合
       if (parentMode === 'new') {
-        // 親フォルダ用の一意なID
         const generatedParentId = `folder-${Date.now()}`;
         targetParentId = generatedParentId;
 
@@ -191,9 +226,9 @@ export function BulkAddModal({
           parent_id: newParentType === 'group' ? (newParentBelongTo || null) : null,
           item_type: newParentType,
           name: newParentName.trim(),
-          duration_business_days: 0, // 親フォルダは子要素から自動集計されるため0
-          start_date: new Date().toISOString().split('T')[0],
-          end_date: new Date().toISOString().split('T')[0],
+          duration_business_days: 0,
+          start_date: startMode === 'specified' ? specifiedStartDate : new Date().toISOString().split('T')[0],
+          end_date: startMode === 'specified' ? specifiedStartDate : new Date().toISOString().split('T')[0],
           assignee: '',
           sort_order: maxSort + 1,
           auto_schedule: true,
@@ -204,13 +239,16 @@ export function BulkAddModal({
         itemsToCreate.push(newParentItem);
       }
 
-      // 工程リストをパースして追加
+      // 工程リストをパースして追加（開始日指定がある場合は先頭工程に反映）
       const baseSort = maxSort + (parentMode === 'new' ? 2 : 1);
+      const effectiveStartDate = startMode === 'specified' ? specifiedStartDate : null;
+
       const tasks = parseBulkScheduleInput(
         inputText,
         projectId,
         targetParentId,
-        baseSort
+        baseSort,
+        effectiveStartDate
       );
 
       if (tasks.length === 0) {
@@ -229,11 +267,9 @@ export function BulkAddModal({
     }
   };
 
-  const currentClient = clientName || 'クライアント';
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3">
-      <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[92vh]">
+      <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[94vh]">
         {/* ヘッダー */}
         <div className="flex items-center justify-between px-6 py-3 border-b border-slate-200 bg-slate-50">
           <div className="flex items-center space-x-2">
@@ -267,7 +303,7 @@ export function BulkAddModal({
             <div className="flex items-center justify-between">
               <span className="font-bold text-slate-800 flex items-center space-x-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                <span>テンプレートを選択して自動反映（手入力も可能）</span>
+                <span>テンプレートを選択（標準も自由に削除可能）</span>
               </span>
               <button
                 type="button"
@@ -275,7 +311,7 @@ export function BulkAddModal({
                 className="text-[11px] text-blue-700 hover:text-blue-900 font-semibold underline flex items-center space-x-1 cursor-pointer"
               >
                 <Settings className="w-3 h-3" />
-                <span>テンプレート管理・削除</span>
+                <span>テンプレートの削除・整理</span>
               </button>
             </div>
 
@@ -288,11 +324,15 @@ export function BulkAddModal({
                 }}
                 className="flex-1 bg-white border border-slate-300 rounded-md px-3 py-1.5 text-xs font-medium text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-blue-500"
               >
-                {templates.map(tpl => (
-                  <option key={tpl.id} value={tpl.id}>
-                    {tpl.isCustom ? '⭐ [自作] ' : '📋 '} {tpl.name}
-                  </option>
-                ))}
+                {templates.length === 0 ? (
+                  <option value="">(登録済みテンプレートはありません)</option>
+                ) : (
+                  templates.map(tpl => (
+                    <option key={tpl.id} value={tpl.id}>
+                      📋 {tpl.name}
+                    </option>
+                  ))
+                )}
               </select>
 
               <button
@@ -317,7 +357,7 @@ export function BulkAddModal({
                     type="text"
                     value={newTemplateName}
                     onChange={e => setNewTemplateName(e.target.value)}
-                    placeholder="例: 社内動画制作・3DCG案件用 など"
+                    placeholder="例: 自社アニメ制作・動画案件用 など"
                     className="flex-1 px-2.5 py-1 text-xs border border-slate-300 rounded-md focus:outline-hidden focus:ring-1 focus:ring-blue-500"
                   />
                   <button
@@ -338,38 +378,119 @@ export function BulkAddModal({
               </div>
             )}
 
-            {/* テンプレート管理（削除など） */}
+            {/* テンプレート管理（標準含め全削除可能 ＋ 初期化リセット機能） */}
             {isTemplateManageOpen && (
-              <div className="p-2.5 bg-white rounded-md border border-slate-300 space-y-1.5 animate-in fade-in duration-100">
-                <div className="font-bold text-[11px] text-slate-700 mb-1">
-                  登録済みテンプレート一覧（自作テンプレートは削除可能）:
+              <div className="p-2.5 bg-white rounded-md border border-slate-300 space-y-2 animate-in fade-in duration-100">
+                <div className="flex items-center justify-between pb-1 border-b border-slate-100">
+                  <span className="font-bold text-[11px] text-slate-700">
+                    テンプレート一覧（不要なものは標準・自作問わず削除できます）:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleResetTemplates}
+                    className="text-[10px] text-slate-500 hover:text-blue-700 flex items-center space-x-1 cursor-pointer"
+                    title="初期標準セットを再読み込み"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>初期セットに戻す</span>
+                  </button>
                 </div>
-                <div className="max-h-36 overflow-y-auto space-y-1 divide-y divide-slate-100">
-                  {templates.map(t => (
-                    <div key={t.id} className="pt-1 flex items-center justify-between text-[11px]">
-                      <span className="text-slate-800">
-                        {t.isCustom ? '⭐ ' : '📋 '} {t.name}
-                      </span>
-                      {t.isCustom ? (
+
+                <div className="max-h-40 overflow-y-auto space-y-1 divide-y divide-slate-100">
+                  {templates.length === 0 ? (
+                    <div className="text-[11px] text-slate-400 py-1">
+                      テンプレートはありません。「初期セットに戻す」か「この内容をテンプレ保存」で追加できます。
+                    </div>
+                  ) : (
+                    templates.map(t => (
+                      <div key={t.id} className="pt-1 flex items-center justify-between text-[11px]">
+                        <span className="text-slate-800 truncate pr-2">
+                          📋 {t.name}
+                        </span>
                         <button
                           type="button"
                           onClick={() => handleDeleteTemplate(t.id, t.name)}
-                          className="text-rose-600 hover:text-rose-800 p-0.5 rounded cursor-pointer"
-                          title="削除"
+                          className="text-rose-600 hover:text-rose-800 p-1 rounded-sm hover:bg-rose-50 cursor-pointer shrink-0 flex items-center space-x-0.5"
+                          title="このテンプレートを削除"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
+                          <span className="text-[10px]">削除</span>
                         </button>
-                      ) : (
-                        <span className="text-[10px] text-slate-400">標準組み込み</span>
-                      )}
-                    </div>
-                  ))}
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             )}
           </div>
 
-          {/* 2. 親階層（フォルダ）の作成・指定 */}
+          {/* 2. 作業開始日（キックオフ日等）の指定（ご要望対応） */}
+          <div className="bg-emerald-50/60 p-3.5 rounded-lg border border-emerald-200 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
+                <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                <span>作業開始日（キックオフ日）の設定</span>
+              </label>
+              <span className="text-[10px] text-emerald-800 font-medium">
+                ※ 複数フォルダを同じキックオフから並行開始できます
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setStartMode('specified')}
+                className={`py-2 px-3 rounded-md border text-left cursor-pointer transition-all ${
+                  startMode === 'specified'
+                    ? 'bg-emerald-100 border-emerald-600 text-emerald-950 font-bold ring-1 ring-emerald-500'
+                    : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <div className="text-xs">📅 開始日（キックオフ日）を指定</div>
+                <div className="text-[10px] text-slate-500 font-normal mt-0.5">
+                  案件開始日や今日、特定の日からスタート
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setStartMode('continue')}
+                className={`py-2 px-3 rounded-md border text-left cursor-pointer transition-all ${
+                  startMode === 'continue'
+                    ? 'bg-emerald-100 border-emerald-600 text-emerald-950 font-bold ring-1 ring-emerald-500'
+                    : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <div className="text-xs">🔄 直前工程の後から連動</div>
+                <div className="text-[10px] text-slate-500 font-normal mt-0.5">
+                  既存の最後の工程の終了翌日から連結
+                </div>
+              </button>
+            </div>
+
+            {startMode === 'specified' && (
+              <div className="pt-1.5 flex items-center space-x-3 bg-white p-2.5 rounded-md border border-emerald-300 animate-in fade-in duration-75">
+                <span className="text-[11px] font-bold text-slate-700 shrink-0">
+                  指定開始日:
+                </span>
+                <input
+                  type="date"
+                  value={specifiedStartDate}
+                  onChange={e => setSpecifiedStartDate(e.target.value)}
+                  className="bg-emerald-50 border border-emerald-300 rounded px-2.5 py-1 text-xs font-bold text-emerald-900 focus:outline-hidden focus:ring-1 focus:ring-emerald-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setSpecifiedStartDate(projectStartDate || new Date().toISOString().split('T')[0])}
+                  className="text-[10px] text-blue-600 hover:underline cursor-pointer"
+                >
+                  案件開始日に戻す
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* 3. 親階層（フォルダ）の作成・指定 */}
           <div className="bg-slate-50 p-3.5 rounded-lg border border-slate-200 space-y-3">
             <label className="block text-xs font-bold text-slate-800">
               追加先の親階層（フォルダ）
@@ -485,29 +606,64 @@ export function BulkAddModal({
             )}
           </div>
 
-          {/* 3. 工程リスト & クイック入力補助 */}
+          {/* 4. 工程リスト & クイック入力補助 */}
           <div>
             <div className="flex flex-wrap items-center justify-between gap-1 mb-1.5">
               <label className="text-xs font-bold text-slate-800">
                 工程リスト（1行につき1工程）
               </label>
+
               {/* 担当者・並行作業のクイック挿入バッジ */}
-              <div className="flex items-center space-x-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-[10px] text-slate-500">ワンクリック追加:</span>
-                <button
-                  type="button"
-                  onClick={() => handleInsertAssignee('DLE')}
-                  className="px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded text-[10px] font-semibold cursor-pointer"
-                >
-                  + DLE担当
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleInsertAssignee(currentClient)}
-                  className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded text-[10px] font-semibold cursor-pointer truncate max-w-[140px]"
-                >
-                  + {currentClient}担当
-                </button>
+                {assigneeOptions.map(opt => (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => handleInsertAssignee(opt)}
+                    className="px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded text-[10px] font-semibold cursor-pointer truncate max-w-[120px]"
+                    title={`担当者「${opt}」の工程を追加`}
+                  >
+                    + {opt}
+                  </button>
+                ))}
+
+                {isAddingAssignee ? (
+                  <div className="inline-flex items-center space-x-1">
+                    <input
+                      type="text"
+                      value={newAssigneeInput}
+                      onChange={e => setNewAssigneeInput(e.target.value)}
+                      placeholder="候補名"
+                      className="w-16 px-1.5 py-0.5 text-[10px] border border-blue-400 rounded bg-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddAssignee}
+                      className="px-1.5 py-0.5 bg-blue-600 text-white rounded text-[10px] font-bold"
+                    >
+                      追加
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsAddingAssignee(false)}
+                      className="text-slate-400 text-[10px]"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingAssignee(true)}
+                    className="px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded text-[10px] flex items-center space-x-0.5 cursor-pointer"
+                    title="新しい担当者候補を追加"
+                  >
+                    <UserPlus className="w-3 h-3" />
+                    <span>候補追加</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={handleInsertParallel}
@@ -535,10 +691,10 @@ export function BulkAddModal({
           <div className="p-3 bg-amber-50/70 rounded-lg border border-amber-200/80 text-xs text-amber-900 space-y-1">
             <div className="flex items-center space-x-1 font-semibold text-amber-950">
               <HelpCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-              <span>自動スケジュール ＆ 並行作業の仕組み</span>
+              <span>自動スケジュール ＆ 開始日の指定について</span>
             </div>
             <p className="text-[11px] leading-relaxed text-amber-800">
-              登録された各工程は自動的に直前の工程の終了翌営業日から開始されます。「並行」と指定した工程は直前工程と同じ期間・開始日に配置され、後続工程は並行作業のうち最も遅い工程の終了翌営業日から開始されます。
+              「指定した日付から開始」を選ぶと、既存工程の最終日を待たずに指定キックオフ日から即座に工程を開始できます。各工程は営業日（土日祝除外）で自動計算されます。
             </p>
           </div>
 

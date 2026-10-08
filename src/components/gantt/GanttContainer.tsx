@@ -770,6 +770,7 @@ export function GanttContainer({
         projectId={project.project_id}
         allItems={items}
         clientName={project.client_name}
+        projectStartDate={project.start_date}
       />
 
       <TodoListModal

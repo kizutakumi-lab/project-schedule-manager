@@ -93,18 +93,22 @@ export const DEFAULT_TEMPLATES: ScheduleTemplate[] = [
   },
 ];
 
-const STORAGE_KEY = 'project_schedule_templates_v1';
+const STORAGE_KEY = 'project_schedule_templates_v2';
 
 /**
- * テンプレート一覧を取得（デフォルト + localStorageのカスタムテンプレート）
+ * テンプレート一覧を取得（初回はデフォルトをセットし、以降は標準・カスタム含め自由に削除・追加可能）
  */
 export function getSavedTemplates(): ScheduleTemplate[] {
   if (typeof window === 'undefined') return DEFAULT_TEMPLATES;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_TEMPLATES;
-    const custom: ScheduleTemplate[] = JSON.parse(raw);
-    return [...DEFAULT_TEMPLATES, ...custom];
+    if (raw === null) {
+      // 初回のみデフォルトをセット
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_TEMPLATES));
+      return DEFAULT_TEMPLATES;
+    }
+    const parsed: ScheduleTemplate[] = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
   } catch (e) {
     console.error('Failed to parse templates from localStorage:', e);
     return DEFAULT_TEMPLATES;
@@ -112,19 +116,30 @@ export function getSavedTemplates(): ScheduleTemplate[] {
 }
 
 /**
- * 新しいカスタムテンプレートを保存
+ * テンプレートリストを保存
  */
-export function saveCustomTemplate(template: Omit<ScheduleTemplate, 'id' | 'isCustom'>): ScheduleTemplate {
+export function saveTemplatesList(templates: ScheduleTemplate[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(templates));
+  } catch (e) {
+    console.error('Failed to save templates to localStorage:', e);
+  }
+}
+
+/**
+ * 新しいカスタムテンプレートを追加・保存
+ */
+export function saveCustomTemplate(template: Omit<ScheduleTemplate, 'id'>): ScheduleTemplate {
   const newTpl: ScheduleTemplate = {
     ...template,
-    id: `custom-tpl-${Date.now()}`,
+    id: `tpl-${Date.now()}`,
     isCustom: true,
   };
 
   try {
-    const current = getCustomTemplates();
+    const current = getSavedTemplates();
     current.push(newTpl);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
+    saveTemplatesList(current);
   } catch (e) {
     console.error('Failed to save custom template:', e);
   }
@@ -133,27 +148,27 @@ export function saveCustomTemplate(template: Omit<ScheduleTemplate, 'id' | 'isCu
 }
 
 /**
- * カスタムテンプレートのみを取得
+ * テンプレートを削除（標準・カスタム問わず削除可能）
  */
-export function getCustomTemplates(): ScheduleTemplate[] {
-  if (typeof window === 'undefined') return [];
+export function deleteCustomTemplate(id: string): void {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    return JSON.parse(raw);
-  } catch {
-    return [];
+    const current = getSavedTemplates();
+    const filtered = current.filter(t => t.id !== id);
+    saveTemplatesList(filtered);
+  } catch (e) {
+    console.error('Failed to delete template:', e);
   }
 }
 
 /**
- * カスタムテンプレートを削除
+ * テンプレートを初期状態（デフォルトセット）にリセット
  */
-export function deleteCustomTemplate(id: string): void {
+export function resetTemplatesToDefault(): ScheduleTemplate[] {
   try {
-    const current = getCustomTemplates().filter(t => t.id !== id);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
+    saveTemplatesList(DEFAULT_TEMPLATES);
+    return DEFAULT_TEMPLATES;
   } catch (e) {
-    console.error('Failed to delete custom template:', e);
+    console.error('Failed to reset templates:', e);
+    return DEFAULT_TEMPLATES;
   }
 }

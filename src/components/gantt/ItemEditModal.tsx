@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Calendar, User, FileText, Link as LinkIcon, Clock } from 'lucide-react';
 import { ScheduleItem, ScheduleItemType } from '@/types';
+import { getAssigneeOptions } from '@/lib/assignees';
 
 interface ItemEditModalProps {
   isOpen: boolean;
@@ -203,22 +204,18 @@ export function ItemEditModal({
                       <User className="w-3.5 h-3.5 text-slate-400" />
                       <span>担当者</span>
                     </label>
-                    <div className="flex items-center space-x-1">
-                      <button
-                        type="button"
-                        onClick={() => setAssignee('DLE')}
-                        className="px-1.5 py-0.5 text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-700 rounded border border-blue-200 cursor-pointer"
-                      >
-                        DLE
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setAssignee(currentClient)}
-                        className="px-1.5 py-0.5 text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-800 rounded border border-amber-200 cursor-pointer truncate max-w-[100px]"
-                        title={currentClient}
-                      >
-                        {currentClient}
-                      </button>
+                    <div className="flex flex-wrap items-center gap-1 justify-end max-w-[200px]">
+                      {getAssigneeOptions(clientName).map(opt => (
+                        <button
+                          key={opt}
+                          type="button"
+                          onClick={() => setAssignee(opt)}
+                          className="px-1.5 py-0.5 text-[10px] bg-slate-100 hover:bg-blue-100 text-slate-700 hover:text-blue-700 rounded border border-slate-200 cursor-pointer truncate max-w-[90px]"
+                          title={opt}
+                        >
+                          {opt}
+                        </button>
+                      ))}
                     </div>
                   </div>
                   <input

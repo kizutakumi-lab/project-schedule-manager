@@ -15,6 +15,11 @@ import {
 } from 'lucide-react';
 import { ScheduleItem, Todo } from '@/types';
 import { GridBorderStrength } from './GanttCalendarHeader';
+import {
+  getAssigneeOptions,
+  addAssigneeOption,
+  deleteAssigneeOption,
+} from '@/lib/assignees';
 
 interface GanttLeftTreeProps {
   items: ScheduleItem[];
@@ -64,6 +69,16 @@ export function GanttLeftTree({
 
   const [editingAssigneeId, setEditingAssigneeId] = useState<string | null>(null);
   const [editingAssigneeValue, setEditingAssigneeValue] = useState<string>('');
+  const [assigneeOptions, setAssigneeOptions] = useState<string[]>(() =>
+    getAssigneeOptions(clientName)
+  );
+  const [newAssigneeInput, setNewAssigneeInput] = useState('');
+  const [isAddingAssigneeOption, setIsAddingAssigneeOption] = useState(false);
+
+  // 担当者候補を更新
+  const refreshAssignees = () => {
+    setAssigneeOptions(getAssigneeOptions(clientName));
+  };
 
   // 複数行選択機能（ご要望: 親階層なしで作った行を一括でフォルダに紐付け）
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -290,7 +305,7 @@ export function GanttLeftTree({
                 )}
               </div>
 
-              {/* 2. 担当者（直接インライン編集可能 ＋ クイック選択） */}
+              {/* 2. 担当者（直接インライン編集可能 ＋ 候補管理・選択プルダウン） */}
               <div className={`w-[85px] shrink-0 px-1 text-center border-r ${borderCol} h-full flex items-center justify-center relative`}>
                 {editingAssigneeId === item.schedule_id ? (
                   <div className="relative w-full">
@@ -299,43 +314,118 @@ export function GanttLeftTree({
                       autoFocus
                       value={editingAssigneeValue}
                       onChange={e => setEditingAssigneeValue(e.target.value)}
-                      onBlur={() => handleFinishEditAssignee(item.schedule_id)}
+                      onBlur={() => {
+                        // ポップアップ内のクリックイベントと競合しないよう少し遅延
+                        setTimeout(() => {
+                          handleFinishEditAssignee(item.schedule_id);
+                        }, 180);
+                      }}
                       onKeyDown={e => {
                         if (e.key === 'Enter') handleFinishEditAssignee(item.schedule_id);
                         if (e.key === 'Escape') setEditingAssigneeId(null);
                       }}
-                      className="w-full px-1 py-0.5 text-[11px] border border-blue-500 rounded-xs bg-white text-center focus:outline-hidden"
+                      className="w-full px-1 py-0.5 text-[11px] border-2 border-blue-500 rounded-xs bg-white text-center focus:outline-hidden"
                     />
-                    {/* クイック選択メニュー */}
-                    <div className="absolute left-0 top-7 z-50 bg-white border border-slate-300 rounded shadow-md p-1 text-[10px] flex flex-col gap-1 w-24 text-left">
-                      <button
-                        type="button"
-                        onMouseDown={() => {
-                          onAssigneeChange(item.schedule_id, 'DLE');
-                          setEditingAssigneeId(null);
-                        }}
-                        className="px-1.5 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded cursor-pointer"
-                      >
-                        DLE
-                      </button>
-                      <button
-                        type="button"
-                        onMouseDown={() => {
-                          onAssigneeChange(item.schedule_id, clientName);
-                          setEditingAssigneeId(null);
-                        }}
-                        className="px-1.5 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold rounded cursor-pointer truncate"
-                        title={clientName}
-                      >
-                        {clientName}
-                      </button>
+                    {/* 候補選択＆追加・削除ドロップダウン */}
+                    <div
+                      onMouseDown={e => e.preventDefault()}
+                      className="absolute left-0 top-7 z-50 bg-white border border-slate-300 rounded-md shadow-xl p-1.5 text-[11px] flex flex-col gap-1 w-36 text-left animate-in fade-in duration-75"
+                    >
+                      <div className="text-[10px] font-bold text-slate-500 pb-0.5 border-b border-slate-100 flex items-center justify-between">
+                        <span>担当者候補</span>
+                        <span className="text-[9px] text-slate-400">クリックで選択</span>
+                      </div>
+
+                      {/* 候補リスト */}
+                      <div className="max-h-36 overflow-y-auto space-y-0.5">
+                        {assigneeOptions.map(opt => (
+                          <div
+                            key={opt}
+                            className="flex items-center justify-between px-1.5 py-0.5 hover:bg-blue-50 rounded group/opt cursor-pointer"
+                          >
+                            <span
+                              onClick={() => {
+                                onAssigneeChange(item.schedule_id, opt);
+                                setEditingAssigneeId(null);
+                              }}
+                              className="font-medium text-slate-800 truncate flex-1"
+                              title={opt}
+                            >
+                              {opt}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={e => {
+                                e.stopPropagation();
+                                const updated = deleteAssigneeOption(opt, clientName);
+                                setAssigneeOptions(updated);
+                              }}
+                              className="text-slate-300 hover:text-rose-600 p-0.5 rounded cursor-pointer opacity-0 group-hover/opt:opacity-100 transition-opacity"
+                              title={`「${opt}」を候補から削除`}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* 候補追加入力 */}
+                      <div className="pt-1 border-t border-slate-100">
+                        {isAddingAssigneeOption ? (
+                          <div className="flex items-center space-x-1">
+                            <input
+                              type="text"
+                              value={newAssigneeInput}
+                              onChange={e => setNewAssigneeInput(e.target.value)}
+                              placeholder="新候補名"
+                              className="w-full px-1 py-0.5 text-[10px] border border-blue-400 rounded bg-white"
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  if (newAssigneeInput.trim()) {
+                                    const updated = addAssigneeOption(newAssigneeInput.trim(), clientName);
+                                    setAssigneeOptions(updated);
+                                    setNewAssigneeInput('');
+                                    setIsAddingAssigneeOption(false);
+                                  }
+                                }
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (newAssigneeInput.trim()) {
+                                  const updated = addAssigneeOption(newAssigneeInput.trim(), clientName);
+                                  setAssigneeOptions(updated);
+                                  setNewAssigneeInput('');
+                                  setIsAddingAssigneeOption(false);
+                                }
+                              }}
+                              className="px-1.5 py-0.5 bg-blue-600 text-white rounded text-[10px] font-bold shrink-0 cursor-pointer"
+                            >
+                              追加
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setIsAddingAssigneeOption(true)}
+                            className="w-full text-center py-0.5 text-[10px] text-blue-600 hover:bg-blue-50 rounded cursor-pointer font-semibold"
+                          >
+                            + 候補を追加
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ) : (
                   <span
-                    onClick={() => handleStartEditAssignee(item)}
-                    title="クリックして担当者を変更（DLE / クライアント）"
-                    className="truncate block w-full cursor-text hover:bg-amber-100/60 px-1 py-0.5 rounded-xs text-[11px] text-slate-700 transition-colors border border-transparent hover:border-amber-300"
+                    onClick={() => {
+                      refreshAssignees();
+                      handleStartEditAssignee(item);
+                    }}
+                    title="クリックして担当者を変更（候補選択 / 追加・削除）"
+                    className="truncate block w-full cursor-text hover:bg-amber-100/60 px-1 py-0.5 rounded-xs text-[11px] text-slate-700 transition-colors border border-transparent hover:border-amber-300 font-medium"
                   >
                     {item.assignee || '-'}
                   </span>

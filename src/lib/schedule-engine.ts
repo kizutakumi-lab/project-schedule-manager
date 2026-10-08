@@ -213,14 +213,16 @@ export function parseBulkScheduleInput(
   rawText: string,
   projectId: string,
   parentId: string | null = null,
-  startSortOrder: number = 1
+  startSortOrder: number = 1,
+  specifiedStartDate?: string | null
 ): Partial<ScheduleItem>[] {
   const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
   const items: Partial<ScheduleItem>[] = [];
 
   let curSort = startSortOrder;
 
-  for (const line of lines) {
+  for (let idx = 0; idx < lines.length; idx++) {
+    const line = lines[idx];
     const parts = line.split(/[\/／]/).map(p => p.trim());
     const name = parts[0] || '未定工程';
 
@@ -246,6 +248,9 @@ export function parseBulkScheduleInput(
       isParallel = true;
     }
 
+    // 先頭タスクで指定開始日がある場合、手動開始日として固定
+    const isFirstWithSpecifiedStart = idx === 0 && Boolean(specifiedStartDate);
+
     items.push({
       schedule_id: `bulk-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       project_id: projectId,
@@ -253,9 +258,10 @@ export function parseBulkScheduleInput(
       item_type: 'task',
       name,
       duration_business_days: duration,
+      start_date: isFirstWithSpecifiedStart ? (specifiedStartDate as string) : undefined,
       assignee,
       sort_order: curSort++,
-      auto_schedule: true,
+      auto_schedule: !isFirstWithSpecifiedStart,
       dependency_id: null,
       is_parallel: isParallel,
       memo: '',
