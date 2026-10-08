@@ -34,6 +34,7 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     'auto_schedule',
     'dependency_id',
     'buffer_days',
+    'is_parallel',
     'memo',
     'created_at',
     'updated_at',

@@ -28,8 +28,12 @@ interface GanttToolbarProps {
   onOpenTodoList: () => void;
   onOpenExportPdf: () => void;
   onScrollToToday: () => void;
+  viewMode?: 'day' | 'week';
+  setViewMode?: (mode: 'day' | 'week') => void;
   dayCellWidth: number;
   setDayCellWidth: (width: number) => void;
+  weekCellWidth?: number;
+  setWeekCellWidth?: (width: number) => void;
   borderStrength: GridBorderStrength;
   setBorderStrength: (strength: GridBorderStrength) => void;
   isSaving: boolean;
@@ -48,8 +52,12 @@ export function GanttToolbar({
   onOpenTodoList,
   onOpenExportPdf,
   onScrollToToday,
+  viewMode = 'day',
+  setViewMode,
   dayCellWidth,
   setDayCellWidth,
+  weekCellWidth = 48,
+  setWeekCellWidth,
   borderStrength,
   setBorderStrength,
   isSaving,
@@ -276,20 +284,61 @@ export function GanttToolbar({
           <span className="hidden sm:inline">今日へ</span>
         </button>
 
+        {/* 日・週表示切替 */}
+        {setViewMode && (
+          <div className="flex items-center rounded-md border border-slate-700 bg-slate-800 p-0.5" title="カレンダー表示単位の切り替え">
+            <button
+              type="button"
+              onClick={() => setViewMode('day')}
+              className={`px-2 py-0.5 rounded text-[11px] font-bold cursor-pointer transition-colors ${
+                viewMode === 'day'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              日表示
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('week')}
+              className={`px-2 py-0.5 rounded text-[11px] font-bold cursor-pointer transition-colors ${
+                viewMode === 'week'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="週単位で圧縮して全体を見渡しやすく表示"
+            >
+              週表示
+            </button>
+          </div>
+        )}
+
         {/* ズーム */}
         <div className="flex items-center border border-slate-700 rounded-md overflow-hidden bg-slate-800">
           <button
-            onClick={() => setDayCellWidth(Math.max(22, dayCellWidth - 4))}
+            onClick={() => {
+              if (viewMode === 'week' && setWeekCellWidth) {
+                setWeekCellWidth(Math.max(30, weekCellWidth - 6));
+              } else {
+                setDayCellWidth(Math.max(22, dayCellWidth - 4));
+              }
+            }}
             className="p-1 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors cursor-pointer"
             title="縮小"
           >
             <ZoomOut className="w-3 h-3" />
           </button>
           <span className="px-1.5 text-[10px] font-mono text-slate-300">
-            {dayCellWidth}px
+            {viewMode === 'week' ? `${weekCellWidth}px` : `${dayCellWidth}px`}
           </span>
           <button
-            onClick={() => setDayCellWidth(Math.min(60, dayCellWidth + 4))}
+            onClick={() => {
+              if (viewMode === 'week' && setWeekCellWidth) {
+                setWeekCellWidth(Math.min(90, weekCellWidth + 6));
+              } else {
+                setDayCellWidth(Math.min(60, dayCellWidth + 4));
+              }
+            }}
             className="p-1 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors cursor-pointer"
             title="拡大"
           >

@@ -12,6 +12,7 @@ interface ItemEditModalProps {
   allItems: ScheduleItem[];
   defaultParentId?: string | null;
   defaultType?: ScheduleItemType;
+  clientName?: string;
 }
 
 export function ItemEditModal({
@@ -22,6 +23,7 @@ export function ItemEditModal({
   allItems,
   defaultParentId = null,
   defaultType = 'task',
+  clientName = 'クライアント',
 }: ItemEditModalProps) {
   const [name, setName] = useState('');
   const [itemType, setItemType] = useState<ScheduleItemType>('task');
@@ -30,6 +32,7 @@ export function ItemEditModal({
   const [startDate, setStartDate] = useState('');
   const [assignee, setAssignee] = useState('');
   const [autoSchedule, setAutoSchedule] = useState(true);
+  const [isParallel, setIsParallel] = useState(false);
   const [dependencyId, setDependencyId] = useState<string | null>(null);
   const [memo, setMemo] = useState('');
   const [loading, setLoading] = useState(false);
@@ -44,6 +47,7 @@ export function ItemEditModal({
       setStartDate(initialData.start_date);
       setAssignee(initialData.assignee || '');
       setAutoSchedule(initialData.auto_schedule);
+      setIsParallel(initialData.is_parallel ?? false);
       setDependencyId(initialData.dependency_id);
       setMemo(initialData.memo || '');
     } else {
@@ -54,6 +58,7 @@ export function ItemEditModal({
       setStartDate('');
       setAssignee('');
       setAutoSchedule(true);
+      setIsParallel(false);
       setDependencyId(null);
       setMemo('');
     }
@@ -90,6 +95,7 @@ export function ItemEditModal({
         start_date: startDate,
         assignee: assignee.trim(),
         auto_schedule: autoSchedule,
+        is_parallel: isParallel,
         dependency_id: dependencyId || null,
         memo: memo.trim(),
       });
@@ -100,6 +106,8 @@ export function ItemEditModal({
       setLoading(false);
     }
   };
+
+  const currentClient = clientName || 'クライアント';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
@@ -133,9 +141,9 @@ export function ItemEditModal({
                 onChange={e => setItemType(e.target.value as ScheduleItemType)}
                 className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-white"
               >
-                <option value="category">大項目 (Category)</option>
-                <option value="group">中項目 (Group)</option>
-                <option value="task">工程・タスク (Task)</option>
+                <option value="category">📁 大項目 (Category)</option>
+                <option value="group">📂 中項目 (Group)</option>
+                <option value="task">📄 工程・タスク (Task)</option>
               </select>
             </div>
 
@@ -190,18 +198,57 @@ export function ItemEditModal({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center space-x-1">
-                    <User className="w-3.5 h-3.5 text-slate-400" />
-                    <span>担当者</span>
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-slate-700 flex items-center space-x-1">
+                      <User className="w-3.5 h-3.5 text-slate-400" />
+                      <span>担当者</span>
+                    </label>
+                    <div className="flex items-center space-x-1">
+                      <button
+                        type="button"
+                        onClick={() => setAssignee('DLE')}
+                        className="px-1.5 py-0.5 text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-700 rounded border border-blue-200 cursor-pointer"
+                      >
+                        DLE
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAssignee(currentClient)}
+                        className="px-1.5 py-0.5 text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-800 rounded border border-amber-200 cursor-pointer truncate max-w-[100px]"
+                        title={currentClient}
+                      >
+                        {currentClient}
+                      </button>
+                    </div>
+                  </div>
                   <input
                     type="text"
                     value={assignee}
                     onChange={e => setAssignee(e.target.value)}
-                    placeholder="例: 山田 太郎 / クライアント"
+                    placeholder="例: DLE / クライアント"
                     className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+              </div>
+
+              {/* 並行作業トグル（イレギュラー並行作業対応） */}
+              <div className="bg-purple-50/70 border border-purple-200 rounded-lg p-2.5">
+                <label className="flex items-start space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isParallel}
+                    onChange={e => setIsParallel(e.target.checked)}
+                    className="mt-0.5 text-purple-600 focus:ring-purple-500 rounded"
+                  />
+                  <div>
+                    <span className="text-xs font-bold text-purple-900 block">
+                      直前の工程と並行作業にする（同じ期間・同開始日）
+                    </span>
+                    <span className="text-[11px] text-purple-700 leading-tight block">
+                      ONにすると直前の工程と同じ開始日になり、同じ期間で別行に並行して進めることができます。
+                    </span>
+                  </div>
+                </label>
               </div>
 
               {/* 日程設定モード */}

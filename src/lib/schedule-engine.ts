@@ -106,6 +106,9 @@ export function recalculateSchedule(
   let lastCompletedEndDate: string | null = null;
   const baseStartDate = getNextOrCurrentBusinessDay(projectStartDate);
 
+  let prevTask: ScheduleItem | null = null;
+  let parallelGroupMaxEnd: string | null = null;
+
   for (const item of sorted) {
     const current = itemMap.get(item.schedule_id)!;
 
@@ -113,7 +116,10 @@ export function recalculateSchedule(
       let taskStartDate = current.start_date;
 
       if (current.auto_schedule) {
-        if (current.dependency_id && itemMap.has(current.dependency_id)) {
+        if (current.is_parallel && prevTask) {
+          // 直前の工程と並行作業：直前タスクと同じ開始日！
+          taskStartDate = prevTask.start_date;
+        } else if (current.dependency_id && itemMap.has(current.dependency_id)) {
           // 明示的な依存関係がある場合：依存先工程の終了日の翌営業日
           const depItem = itemMap.get(current.dependency_id)!;
           taskStartDate = getNextBusinessDay(depItem.end_date);
@@ -143,7 +149,20 @@ export function recalculateSchedule(
       current.end_date = taskEndDate;
       current.duration_business_days = duration;
 
-      lastCompletedEndDate = taskEndDate;
+      if (current.is_parallel) {
+        // 並行タスクの場合、並行グループ内で最大の終了日を保持
+        if (!parallelGroupMaxEnd || taskEndDate > parallelGroupMaxEnd) {
+          parallelGroupMaxEnd = taskEndDate;
+        }
+        if (parallelGroupMaxEnd && (!lastCompletedEndDate || parallelGroupMaxEnd > lastCompletedEndDate)) {
+          lastCompletedEndDate = parallelGroupMaxEnd;
+        }
+      } else {
+        parallelGroupMaxEnd = taskEndDate;
+        lastCompletedEndDate = taskEndDate;
+      }
+
+      prevTask = current;
     }
   }
 
@@ -188,7 +207,7 @@ function updateParentItemDates(itemMap: Map<string, ScheduleItem>) {
 
 /**
  * テキストから一括スケジュール工程を解析
- * 書式: 「工程名 / 営業日数 / 担当者(任意)」
+ * 書式: 「工程名 / 営業日数 / 担当者(任意) / 並行(任意)」
  */
 export function parseBulkScheduleInput(
   rawText: string,
@@ -213,7 +232,19 @@ export function parseBulkScheduleInput(
       }
     }
 
-    const assignee = parts[2] || '';
+    let assignee = parts[2] || '';
+    let isParallel = false;
+
+    // 第3・第4パートから「並行」「同時」判定
+    const parallelKeywords = ['並行', '並行作業', '同時', 'parallel', 'p'];
+    if (parallelKeywords.includes(assignee.toLowerCase())) {
+      isParallel = true;
+      assignee = '';
+    }
+
+    if (parts[3] && parallelKeywords.includes(parts[3].toLowerCase())) {
+      isParallel = true;
+    }
 
     items.push({
       schedule_id: `bulk-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -226,6 +257,7 @@ export function parseBulkScheduleInput(
       sort_order: curSort++,
       auto_schedule: true,
       dependency_id: null,
+      is_parallel: isParallel,
       memo: '',
     });
   }

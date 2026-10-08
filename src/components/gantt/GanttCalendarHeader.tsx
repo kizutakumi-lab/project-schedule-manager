@@ -1,21 +1,29 @@
 'use client';
 
 import React from 'react';
-import { CalendarDay, MonthGroup } from '@/lib/date-utils';
+import { CalendarDay, CalendarWeek, MonthGroup } from '@/lib/date-utils';
 
 export type GridBorderStrength = 'normal' | 'strong' | 'bold';
 
 interface GanttCalendarHeaderProps {
+  viewMode?: 'day' | 'week';
   calendarDays: CalendarDay[];
   monthGroups: MonthGroup[];
   dayCellWidth: number;
+  calendarWeeks?: CalendarWeek[];
+  weekMonthGroups?: MonthGroup[];
+  weekCellWidth?: number;
   borderStrength: GridBorderStrength;
 }
 
 export function GanttCalendarHeader({
+  viewMode = 'day',
   calendarDays,
   monthGroups,
   dayCellWidth,
+  calendarWeeks = [],
+  weekMonthGroups = [],
+  weekCellWidth = 48,
   borderStrength,
 }: GanttCalendarHeaderProps) {
   // 罫線の濃さマッピング
@@ -31,6 +39,53 @@ export function GanttCalendarHeader({
     bold: 'border-slate-700',
   }[borderStrength];
 
+  if (viewMode === 'week') {
+    const totalWeeks = calendarWeeks.length;
+    const headerWidth = totalWeeks * weekCellWidth;
+
+    return (
+      <div
+        style={{ width: `${headerWidth}px` }}
+        className={`sticky top-0 z-20 bg-white border-b-2 ${headerBorderCol} shadow-xs select-none h-[70px] box-border`}
+      >
+        {/* 1行目: 年月 */}
+        <div className={`flex border-b ${borderCol} bg-slate-100 text-xs font-bold text-slate-800 h-[34px] box-border`}>
+          {weekMonthGroups.map((group, idx) => (
+            <div
+              key={`${group.year}-${group.month}-${idx}`}
+              style={{ width: `${group.daysCount * weekCellWidth}px` }}
+              className={`px-2 flex items-center border-r ${borderCol} shrink-0 truncate`}
+            >
+              {group.label}
+            </div>
+          ))}
+        </div>
+
+        {/* 2行目: 週ラベル (例: 4/7週) */}
+        <div className={`flex bg-slate-50 text-[11px] font-semibold text-slate-700 h-[36px] box-border`}>
+          {calendarWeeks.map(week => {
+            const todayStr = new Date().toISOString().split('T')[0];
+            const isCurrentWeek = week.startDateStr <= todayStr && todayStr <= week.endDateStr;
+
+            return (
+              <div
+                key={week.weekIndex}
+                style={{ width: `${weekCellWidth}px` }}
+                className={`flex flex-col items-center justify-center border-r ${borderCol} shrink-0 text-center leading-tight ${
+                  isCurrentWeek ? 'bg-blue-100 text-blue-900 font-bold' : ''
+                }`}
+                title={`${week.startDateStr} 〜 ${week.endDateStr}`}
+              >
+                <span>{week.label}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // 通常: 日表示モード
   const totalDays = calendarDays.length;
   const headerWidth = totalDays * dayCellWidth;
 

@@ -2,13 +2,22 @@
 
 import React, { useState } from 'react';
 import { ScheduleItem, Todo } from '@/types';
-import { CalendarDay, getBarPosition, getTaskColorTheme } from '@/lib/date-utils';
+import {
+  CalendarDay,
+  CalendarWeek,
+  getBarPosition,
+  getWeekBarPosition,
+  getTaskColorTheme,
+} from '@/lib/date-utils';
 import { GridBorderStrength } from './GanttCalendarHeader';
 
 interface GanttTimelineProps {
+  viewMode?: 'day' | 'week';
   items: ScheduleItem[];
   calendarDays: CalendarDay[];
   dayCellWidth: number;
+  calendarWeeks?: CalendarWeek[];
+  weekCellWidth?: number;
   visibleItemIds: Set<string>;
   collapsedIds: Set<string>;
   onEditItem: (item: ScheduleItem) => void;
@@ -20,9 +29,12 @@ interface GanttTimelineProps {
 }
 
 export function GanttTimeline({
+  viewMode = 'day',
   items,
   calendarDays,
   dayCellWidth,
+  calendarWeeks = [],
+  weekCellWidth = 48,
   visibleItemIds,
   collapsedIds,
   onEditItem,
@@ -32,7 +44,7 @@ export function GanttTimeline({
   onCellClick,
   onDragMoveItem,
 }: GanttTimelineProps) {
-  // ドラッグ＆ドロップ状態管理
+  // ドラッグ＆ドロップ状態管理（日単位モード時）
   const [activeDrag, setActiveDrag] = useState<{
     itemId: string;
     startX: number;
@@ -40,12 +52,18 @@ export function GanttTimeline({
     hasMoved: boolean;
   } | null>(null);
 
-  if (calendarDays.length === 0) return null;
+  if (viewMode === 'day' && calendarDays.length === 0) return null;
+  if (viewMode === 'week' && calendarWeeks.length === 0) return null;
 
-  const calendarStart = calendarDays[0].dateStr;
-  const calendarEnd = calendarDays[calendarDays.length - 1].dateStr;
+  const calendarStart = calendarDays[0]?.dateStr || '';
+  const calendarEnd = calendarDays[calendarDays.length - 1]?.dateStr || '';
   const totalDays = calendarDays.length;
-  const timelineWidth = totalDays * dayCellWidth;
+
+  const isWeekMode = viewMode === 'week';
+  const currentCellWidth = isWeekMode ? weekCellWidth : dayCellWidth;
+  const timelineWidth = isWeekMode
+    ? calendarWeeks.length * weekCellWidth
+    : totalDays * dayCellWidth;
 
   // 罫線の濃さ
   const borderCol = {
@@ -74,10 +92,10 @@ export function GanttTimeline({
     return tasks;
   };
 
-  // ドラッグ開始ハンドラ
+  // ドラッグ開始ハンドラ（日単位モードのみドラッグ移動有効）
   const handleBarMouseDown = (e: React.MouseEvent, item: ScheduleItem) => {
     e.stopPropagation();
-    if (item.item_type !== 'task') {
+    if (isWeekMode || item.item_type !== 'task') {
       onEditItem(item);
       return;
     }
@@ -123,6 +141,8 @@ export function GanttTimeline({
     window.addEventListener('mouseup', handleMouseUp);
   };
 
+  const todayStr = new Date().toISOString().split('T')[0];
+
   return (
     <div
       style={{ width: `${timelineWidth}px` }}
@@ -130,19 +150,40 @@ export function GanttTimeline({
     >
       {/* 背景グリッド縦線 */}
       <div className="absolute inset-0 flex pointer-events-none">
-        {calendarDays.map(day => (
-          <div
-            key={day.dateStr}
-            style={{ width: `${dayCellWidth}px` }}
-            className={`h-full border-r ${borderCol} shrink-0 ${
-              day.isWeekend || day.isHoliday ? 'bg-slate-200/50' : ''
-            } ${day.isToday ? 'bg-blue-50/60' : ''}`}
-          >
-            {day.isToday && (
-              <div className="w-[2px] h-full bg-blue-600 mx-auto opacity-80" />
-            )}
-          </div>
-        ))}
+        {isWeekMode ? (
+          /* 週単位の背景グリッド */
+          calendarWeeks.map(week => {
+            const isCurrentWeek = week.startDateStr <= todayStr && todayStr <= week.endDateStr;
+            return (
+              <div
+                key={week.weekIndex}
+                style={{ width: `${weekCellWidth}px` }}
+                className={`h-full border-r ${borderCol} shrink-0 ${
+                  isCurrentWeek ? 'bg-blue-50/60' : ''
+                }`}
+              >
+                {isCurrentWeek && (
+                  <div className="w-[2px] h-full bg-blue-600 mx-auto opacity-80" />
+                )}
+              </div>
+            );
+          })
+        ) : (
+          /* 日単位の背景グリッド */
+          calendarDays.map(day => (
+            <div
+              key={day.dateStr}
+              style={{ width: `${dayCellWidth}px` }}
+              className={`h-full border-r ${borderCol} shrink-0 ${
+                day.isWeekend || day.isHoliday ? 'bg-slate-200/50' : ''
+              } ${day.isToday ? 'bg-blue-50/60' : ''}`}
+            >
+              {day.isToday && (
+                <div className="w-[2px] h-full bg-blue-600 mx-auto opacity-80" />
+              )}
+            </div>
+          ))
+        )}
       </div>
 
       {/* 各行のタスクバー描画レイヤー */}
@@ -170,13 +211,9 @@ export function GanttTimeline({
             return (
               <div key={item.schedule_id} className={rowBgClass}>
                 {childTasks.map(task => {
-                  const { leftIndex, span, isVisible } = getBarPosition(
-                    task.start_date,
-                    task.end_date,
-                    calendarStart,
-                    calendarEnd,
-                    totalDays
-                  );
+                  const { leftIndex, span, isVisible } = isWeekMode
+                    ? getWeekBarPosition(task.start_date, task.end_date, calendarWeeks)
+                    : getBarPosition(task.start_date, task.end_date, calendarStart, calendarEnd, totalDays);
 
                   if (!isVisible || leftIndex < 0) return null;
 
@@ -186,8 +223,8 @@ export function GanttTimeline({
                     <div
                       key={task.schedule_id}
                       style={{
-                        left: `${leftIndex * dayCellWidth}px`,
-                        width: `${span * dayCellWidth}px`,
+                        left: `${leftIndex * currentCellWidth}px`,
+                        width: `${span * currentCellWidth}px`,
                       }}
                       onClick={() => onEditItem(task)}
                       className={`absolute top-1.5 bottom-1.5 rounded-xs border shadow-2xs cursor-pointer flex items-center justify-between px-1.5 text-[10px] truncate transition-all hover:brightness-95 hover:z-20 group/bar ${colorTheme.bg} ${colorTheme.border} ${colorTheme.text}`}
@@ -196,7 +233,7 @@ export function GanttTimeline({
                       <span className="truncate pr-0.5 font-medium">
                         {task.name}
                       </span>
-                      {task.duration_business_days > 0 && span * dayCellWidth > 38 && (
+                      {task.duration_business_days > 0 && span * currentCellWidth > 38 && (
                         <span className="shrink-0 text-[9px] opacity-80">
                           {task.duration_business_days}d
                         </span>
@@ -209,32 +246,38 @@ export function GanttTimeline({
           }
 
           // 通常行の描画
-          const { leftIndex, span, isVisible } = getBarPosition(
-            item.start_date,
-            item.end_date,
-            calendarStart,
-            calendarEnd,
-            totalDays
-          );
+          const { leftIndex, span, isVisible } = isWeekMode
+            ? getWeekBarPosition(item.start_date, item.end_date, calendarWeeks)
+            : getBarPosition(item.start_date, item.end_date, calendarStart, calendarEnd, totalDays);
 
           const colorTheme = getTaskColorTheme(item.name, item.item_type);
           const isDraggingThis = activeDrag?.itemId === item.schedule_id;
-          const currentLeft = (leftIndex + (isDraggingThis ? activeDrag.deltaDays : 0)) * dayCellWidth;
+          const currentLeft = (leftIndex + (isDraggingThis ? activeDrag.deltaDays : 0)) * currentCellWidth;
 
           return (
             <div key={item.schedule_id} className={rowBgClass}>
-              {/* 各日付セルのクリック領域（特定日付をクリックして作業IN日に設定） */}
+              {/* 各日付セルのクリック領域（特定日付または特定週をクリックして作業IN日に設定） */}
               {onCellClick && item.item_type === 'task' && !activeDrag && (
                 <div className="absolute inset-0 flex pointer-events-auto">
-                  {calendarDays.map(day => (
-                    <div
-                      key={day.dateStr}
-                      style={{ width: `${dayCellWidth}px` }}
-                      onClick={() => onCellClick(item, day.dateStr)}
-                      className="h-full shrink-0 hover:bg-blue-100/40 cursor-pointer transition-colors"
-                      title={`${item.name}: ${day.dateStr} を作業IN日に指定`}
-                    />
-                  ))}
+                  {isWeekMode
+                    ? calendarWeeks.map(week => (
+                        <div
+                          key={week.weekIndex}
+                          style={{ width: `${weekCellWidth}px` }}
+                          onClick={() => onCellClick(item, week.startDateStr)}
+                          className="h-full shrink-0 hover:bg-blue-100/40 cursor-pointer transition-colors"
+                          title={`${item.name}: ${week.label}（${week.startDateStr}）を作業IN日に指定`}
+                        />
+                      ))
+                    : calendarDays.map(day => (
+                        <div
+                          key={day.dateStr}
+                          style={{ width: `${dayCellWidth}px` }}
+                          onClick={() => onCellClick(item, day.dateStr)}
+                          className="h-full shrink-0 hover:bg-blue-100/40 cursor-pointer transition-colors"
+                          title={`${item.name}: ${day.dateStr} を作業IN日に指定`}
+                        />
+                      ))}
                 </div>
               )}
 
@@ -243,105 +286,80 @@ export function GanttTimeline({
                 <div
                   style={{
                     left: `${currentLeft}px`,
-                    width: `${span * dayCellWidth}px`,
+                    width: `${span * currentCellWidth}px`,
                   }}
                   onMouseDown={(e) => handleBarMouseDown(e, item)}
                   className={`absolute top-1.5 bottom-1.5 rounded-xs border shadow-2xs flex items-center justify-between px-2 text-[11px] truncate transition-all group/bar z-10 ${
                     isDraggingThis
-                      ? 'cursor-grabbing z-30 shadow-lg ring-2 ring-blue-500 scale-[1.02] opacity-90'
-                      : 'cursor-grab hover:brightness-95'
+                      ? 'opacity-80 ring-2 ring-blue-500 z-30 cursor-grabbing'
+                      : isWeekMode
+                      ? 'cursor-pointer hover:brightness-95 hover:z-20'
+                      : 'cursor-grab active:cursor-grabbing hover:brightness-95 hover:z-20'
                   } ${colorTheme.bg} ${colorTheme.border} ${colorTheme.text}`}
-                  title={`${item.name} (${item.start_date} 〜 ${item.end_date} : ${item.duration_business_days || 0}営業日) - ドラッグして横移動、クリックで日程調整`}
+                  title={`${item.name} (${item.start_date} 〜 ${item.end_date} : ${item.duration_business_days}営業日) ${
+                    item.is_parallel ? '【並行作業】' : ''
+                  }`}
                 >
-                  <span className="truncate pr-1 font-medium pointer-events-none">
-                    {item.name}
-                  </span>
-                  {item.duration_business_days > 0 && span * dayCellWidth > 45 && (
-                    <span className="shrink-0 text-[10px] opacity-85 pointer-events-none">
-                      {isDraggingThis && activeDrag.deltaDays !== 0
-                        ? `${activeDrag.deltaDays > 0 ? `+${activeDrag.deltaDays}` : activeDrag.deltaDays}日`
-                        : `${item.duration_business_days}日`}
-                    </span>
-                  )}
+                  <div className="flex items-center space-x-1 truncate font-medium">
+                    {item.is_parallel && (
+                      <span className="shrink-0 px-1 py-0.2 bg-purple-600 text-white rounded text-[8px] font-bold">
+                        並行
+                      </span>
+                    )}
+                    <span className="truncate">{item.name}</span>
+                  </div>
 
-                  {/* ドラッグ移動中のプレビューガイド */}
-                  {isDraggingThis && activeDrag.deltaDays !== 0 && (
-                    <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] font-bold px-2 py-0.5 rounded-sm shadow-md whitespace-nowrap z-40 pointer-events-none">
-                      {activeDrag.deltaDays > 0 ? `+${activeDrag.deltaDays}日` : `${activeDrag.deltaDays}日`} 移動
-                    </div>
-                  )}
+                  <div className="flex items-center space-x-1 shrink-0 ml-1 text-[10px] opacity-90 font-mono">
+                    {item.duration_business_days > 0 && span * currentCellWidth > 45 && (
+                      <span>{item.duration_business_days}d</span>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
           );
         })}
-
-        {/* 担当者別 TODO タイムライン */}
-        {assigneeGroups.length > 0 && (
-          <>
-            {/* TODOセクションヘッダー行 */}
-            <div className={`h-8 box-border relative flex items-center bg-slate-200/90 border-t-2 border-t-slate-700 border-b ${borderCol}`}>
-              <div className="px-3 text-[11px] font-semibold text-slate-600">
-                期日カレンダー
-              </div>
-            </div>
-
-            {/* 各担当者のTODO期日セル行 */}
-            {assigneeGroups.map(([assignee, list]) => {
-              const todayStr = new Date().toISOString().split('T')[0];
-
-              return (
-                <div
-                  key={assignee}
-                  className={`h-10 box-border relative flex items-center border-b ${borderCol} bg-slate-50/40`}
-                >
-                  {calendarDays.map(day => {
-                    const dayTodos = list.filter(t => t.due_date === day.dateStr);
-
-                    return (
-                      <div
-                        key={day.dateStr}
-                        style={{ width: `${dayCellWidth}px` }}
-                        className="h-full shrink-0 flex items-center justify-center p-0.5"
-                      >
-                        {dayTodos.length > 0 && (
-                          <div className="w-full flex flex-col gap-0.5 items-center justify-center">
-                            {dayTodos.map(t => {
-                              const isOverdue = t.status === 'open' && t.due_date < todayStr;
-                              const isToday = t.status === 'open' && t.due_date === todayStr;
-                              const isCompleted = t.status === 'completed';
-
-                              let badgeColor = 'bg-blue-600 text-white font-bold';
-                              if (isCompleted) {
-                                badgeColor = 'bg-slate-200 text-slate-500 line-through';
-                              } else if (isOverdue) {
-                                badgeColor = 'bg-rose-600 text-white font-extrabold animate-pulse';
-                              } else if (isToday) {
-                                badgeColor = 'bg-amber-500 text-white font-extrabold';
-                              }
-
-                              return (
-                                <button
-                                  key={t.todo_id}
-                                  onClick={() => onTodoClick(t)}
-                                  title={`[${t.status === 'completed' ? '完了' : '未完了'}] ${t.title} (${t.due_date})`}
-                                  className={`w-full max-w-[28px] truncate px-1 py-0.5 text-[9px] rounded-xs cursor-pointer text-center leading-none shadow-2xs hover:scale-110 transition-transform ${badgeColor}`}
-                                >
-                                  ✓
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
-          </>
-        )}
       </div>
+
+      {/* 担当者別TODO 期日カレンダー描画行 */}
+      {assigneeGroups.length > 0 && (
+        <div className="relative z-10">
+          {assigneeGroups.map(([assignee, todoList]) => (
+            <div
+              key={assignee}
+              className={`h-10 box-border relative flex items-center border-b ${borderCol} bg-slate-50/40`}
+            >
+              {todoList.map(todo => {
+                const isCompleted = todo.status === 'completed';
+                const { leftIndex, span, isVisible } = isWeekMode
+                  ? getWeekBarPosition(todo.due_date, todo.due_date, calendarWeeks)
+                  : getBarPosition(todo.due_date, todo.due_date, calendarStart, calendarEnd, totalDays);
+
+                if (!isVisible || leftIndex < 0) return null;
+
+                return (
+                  <div
+                    key={todo.todo_id}
+                    style={{
+                      left: `${leftIndex * currentCellWidth + 4}px`,
+                    }}
+                    onClick={() => onTodoClick(todo)}
+                    className={`absolute top-2 bottom-2 z-20 cursor-pointer flex items-center px-1.5 rounded-sm border text-[10px] shadow-2xs transition-all hover:scale-105 ${
+                      isCompleted
+                        ? 'bg-slate-100 border-slate-300 text-slate-400 line-through'
+                        : 'bg-emerald-500 border-emerald-600 text-white font-bold hover:bg-emerald-600'
+                    }`}
+                    title={`[TODO期日: ${todo.due_date}] ${todo.title} (${assignee})`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-white mr-1 shrink-0" />
+                    <span className="truncate max-w-[120px]">{todo.title}</span>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

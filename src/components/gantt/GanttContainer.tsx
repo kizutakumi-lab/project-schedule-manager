@@ -7,6 +7,9 @@ import {
   generateCalendarDays,
   groupCalendarByMonth,
   CalendarDay,
+  CalendarWeek,
+  generateCalendarWeeks,
+  groupWeeksByMonth,
 } from '@/lib/date-utils';
 import { recalculateSchedule } from '@/lib/schedule-engine';
 import { GanttToolbar } from './GanttToolbar';
@@ -56,7 +59,10 @@ export function GanttContainer({
   );
   const [todos, setTodos] = useState<Todo[]>(initialTodos);
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
+  // 表示単位: 'day' (通常の日単位) | 'week' (週単位の圧縮表示)
+  const [viewMode, setViewMode] = useState<'day' | 'week'>('day');
   const [dayCellWidth, setDayCellWidth] = useState<number>(36);
+  const [weekCellWidth, setWeekCellWidth] = useState<number>(48);
   // 罫線の濃さ設定（デフォルト: くっきり strong）
   const [borderStrength, setBorderStrength] = useState<GridBorderStrength>('strong');
   const [isSaving, setIsSaving] = useState<boolean>(false);
@@ -152,6 +158,15 @@ export function GanttContainer({
       end: project.end_date || '2025-08-31',
     };
   }, [calendarDays, project]);
+
+  // 週単位カレンダーデータ（通常画面の週単位圧縮表示用）
+  const calendarWeeks = useMemo(() => {
+    return generateCalendarWeeks(activeRange.start, activeRange.end);
+  }, [activeRange]);
+
+  const weekMonthGroups = useMemo(() => {
+    return groupWeeksByMonth(calendarWeeks);
+  }, [calendarWeeks]);
 
   // Googleスプレッドシートへの一括保存ハンドラ
   const handleSaveAll = async () => {
@@ -271,14 +286,37 @@ export function GanttContainer({
     });
   }, []);
 
-  // 今日の日付へスクロール
+  // 今日の日付へスクロール（日表示・週表示両対応）
   const handleScrollToToday = useCallback(() => {
-    const todayIndex = calendarDays.findIndex(d => d.isToday);
-    if (todayIndex >= 0 && timelineScrollRef.current) {
-      const scrollPos = Math.max(0, todayIndex * dayCellWidth - 200);
-      timelineScrollRef.current.scrollTo({ left: scrollPos, behavior: 'smooth' });
+    if (viewMode === 'week') {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const todayWeekIndex = calendarWeeks.findIndex(
+        w => w.startDateStr <= todayStr && todayStr <= w.endDateStr
+      );
+      if (todayWeekIndex >= 0 && timelineScrollRef.current) {
+        const scrollPos = Math.max(0, todayWeekIndex * weekCellWidth - 200);
+        timelineScrollRef.current.scrollTo({ left: scrollPos, behavior: 'smooth' });
+      }
+    } else {
+      const todayIndex = calendarDays.findIndex(d => d.isToday);
+      if (todayIndex >= 0 && timelineScrollRef.current) {
+        const scrollPos = Math.max(0, todayIndex * dayCellWidth - 200);
+        timelineScrollRef.current.scrollTo({ left: scrollPos, behavior: 'smooth' });
+      }
     }
-  }, [calendarDays, dayCellWidth]);
+  }, [viewMode, calendarWeeks, weekCellWidth, calendarDays, dayCellWidth]);
+
+  // 直前工程との並行作業の切り替え (0ms即時反映)
+  const handleToggleParallel = (itemId: string) => {
+    const updatedItems = items.map(item =>
+      item.schedule_id === itemId
+        ? { ...item, is_parallel: !item.is_parallel }
+        : item
+    );
+    const recalculated = recalculateSchedule(updatedItems, project.start_date);
+    setItems(recalculated);
+    setHasUnsavedChanges(true);
+  };
 
   // 初回マウント時に今日へスクロール
   useEffect(() => {
@@ -354,25 +392,29 @@ export function GanttContainer({
 
   // 一括スケジュール入力ハンドラ (0ms即時反映)
   const handleBulkAdd = async (bulkItems: Partial<ScheduleItem>[]) => {
-    const itemsToCreate = bulkItems.map((b, idx) => ({
-      schedule_id: `item-${Date.now()}-${idx}`,
-      project_id: project.project_id,
-      parent_id: b.parent_id || null,
-      item_type: 'task' as ScheduleItemType,
-      name: b.name || '工程',
-      duration_business_days: b.duration_business_days || 1,
-      start_date: project.start_date,
-      end_date: project.start_date,
-      assignee: b.assignee || '',
-      sort_order: b.sort_order || items.length + idx + 1,
-      auto_schedule: true,
-      dependency_id: null,
-      memo: '',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }));
+    const itemsToCreate = bulkItems.map((b, idx) => {
+      const isParentFolder = b.item_type === 'category' || b.item_type === 'group';
+      return {
+        schedule_id: b.schedule_id || `item-${Date.now()}-${idx}`,
+        project_id: project.project_id,
+        parent_id: b.parent_id || null,
+        item_type: b.item_type || 'task',
+        name: b.name || (isParentFolder ? '新規階層' : '工程'),
+        duration_business_days: isParentFolder ? 0 : (b.duration_business_days ?? 1),
+        start_date: b.start_date || project.start_date,
+        end_date: b.end_date || project.start_date,
+        assignee: b.assignee || '',
+        sort_order: b.sort_order || (items.length + idx + 1),
+        auto_schedule: b.auto_schedule ?? true,
+        dependency_id: b.dependency_id || null,
+        is_parallel: b.is_parallel ?? false,
+        memo: b.memo || '',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      } as ScheduleItem;
+    });
 
-    const nextList = [...items, ...(itemsToCreate as ScheduleItem[])];
+    const nextList = [...items, ...itemsToCreate];
     const recalculated = recalculateSchedule(nextList, project.start_date);
     setItems(recalculated);
     setHasUnsavedChanges(true);
@@ -580,6 +622,10 @@ export function GanttContainer({
         calendarRange={activeRange}
         setCalendarRange={setCustomRange}
         onResetCalendarRange={() => setCustomRange(null)}
+        viewMode={viewMode}
+        setViewMode={setViewMode}
+        weekCellWidth={weekCellWidth}
+        setWeekCellWidth={setWeekCellWidth}
       />
 
       {/* ご要望対応: ヘッダーと工程の間にメモ・日程消化率サマリーバーを設置（スケジュール3行分相当・リサイズ可能） */}
@@ -622,6 +668,8 @@ export function GanttContainer({
             onDurationChange={handleDurationChange}
             onNameChange={handleNameChange}
             onAssigneeChange={handleAssigneeChange}
+            onToggleParallel={handleToggleParallel}
+            clientName={project.client_name}
             visibleItemIds={visibleItemIds}
             borderStrength={borderStrength}
             assigneeGroups={assigneeGroups}
@@ -639,19 +687,26 @@ export function GanttContainer({
           onScroll={handleTimelineScroll}
           className="flex-1 overflow-auto bg-slate-50/20"
         >
-          {/* カレンダーヘッダー */}
+          {/* カレンダーヘッダー（日表示 / 週単位圧縮表示対応） */}
           <GanttCalendarHeader
+            viewMode={viewMode}
             calendarDays={calendarDays}
             monthGroups={monthGroups}
             dayCellWidth={dayCellWidth}
+            calendarWeeks={calendarWeeks}
+            weekMonthGroups={weekMonthGroups}
+            weekCellWidth={weekCellWidth}
             borderStrength={borderStrength}
           />
 
-          {/* ガントバー（折りたたみ時は横一列サマリー描画、最下部に担当者別TODO期日セルを描画、ドラッグ移動対応） */}
+          {/* ガントバー（日表示 / 週単位圧縮表示、折りたたみ時は横一列サマリー描画、最下部に担当者別TODO期日セルを描画） */}
           <GanttTimeline
+            viewMode={viewMode}
             items={items}
             calendarDays={calendarDays}
             dayCellWidth={dayCellWidth}
+            calendarWeeks={calendarWeeks}
+            weekCellWidth={weekCellWidth}
             visibleItemIds={visibleItemIds}
             collapsedIds={collapsedIds}
             onEditItem={item => {
@@ -705,6 +760,7 @@ export function GanttContainer({
         allItems={items}
         defaultParentId={newItemParentId}
         defaultType={newItemType}
+        clientName={project.client_name}
       />
 
       <BulkAddModal
@@ -713,6 +769,7 @@ export function GanttContainer({
         onSubmit={handleBulkAdd}
         projectId={project.project_id}
         allItems={items}
+        clientName={project.client_name}
       />
 
       <TodoListModal

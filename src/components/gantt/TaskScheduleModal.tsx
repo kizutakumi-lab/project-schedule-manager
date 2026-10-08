@@ -23,6 +23,7 @@ export function TaskScheduleModal({
   const [startDate, setStartDate] = useState<string>('');
   const [duration, setDuration] = useState<number>(1);
   const [bufferDays, setBufferDays] = useState<number>(0);
+  const [isParallel, setIsParallel] = useState<boolean>(false);
   const [scheduleMode, setScheduleMode] = useState<'fixed' | 'auto'>('fixed');
 
   useEffect(() => {
@@ -32,6 +33,7 @@ export function TaskScheduleModal({
       setStartDate(initStart);
       setDuration(item.duration_business_days || 1);
       setBufferDays(item.buffer_days || 0);
+      setIsParallel(item.is_parallel ?? false);
       // クリック日付指定や手動指定なら 'fixed'、自動連動なら 'auto'
       setScheduleMode(clickedDateStr ? 'fixed' : (item.auto_schedule ? 'auto' : 'fixed'));
     }
@@ -57,6 +59,7 @@ export function TaskScheduleModal({
       duration_business_days: duration,
       buffer_days: bufferDays,
       auto_schedule: scheduleMode === 'auto',
+      is_parallel: isParallel,
     });
     onClose();
   };
@@ -173,6 +176,21 @@ export function TaskScheduleModal({
                 <p className="text-[10px] text-slate-500 mt-1">
                   ※ 前工程が終わってから準備やクライアント確認等で少し期間を空けたい場合に指定します。
                 </p>
+              </div>
+
+              {/* 並行作業設定 */}
+              <div className="bg-purple-50/70 border border-purple-200 rounded-md p-2">
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isParallel}
+                    onChange={e => setIsParallel(e.target.checked)}
+                    className="text-purple-600 focus:ring-purple-500 rounded"
+                  />
+                  <span className="text-[11px] font-bold text-purple-900">
+                    直前の工程と並行進行する（同じ開始日・同期間）
+                  </span>
+                </label>
               </div>
             </div>
           )}

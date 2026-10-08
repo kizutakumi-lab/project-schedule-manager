@@ -29,6 +29,7 @@ export interface ScheduleItem {
   auto_schedule: boolean;
   dependency_id: string | null;
   buffer_days?: number; // 前工程との余白・バッファ日数（営業日）
+  is_parallel?: boolean; // 直前工程と並行作業（同開始日・並行進行）
   memo: string;
   created_at: string;
   updated_at: string;

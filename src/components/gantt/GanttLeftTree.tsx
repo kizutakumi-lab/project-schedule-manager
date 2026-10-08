@@ -35,6 +35,8 @@ interface GanttLeftTreeProps {
   assigneeGroups: [string, Todo[]][];
   onAddTodoForAssignee: (assignee: string) => void;
   onDeleteAssigneeTodos: (assignee: string) => void;
+  onToggleParallel?: (id: string) => void;
+  clientName?: string;
 }
 
 export function GanttLeftTree({
@@ -53,6 +55,8 @@ export function GanttLeftTree({
   assigneeGroups,
   onAddTodoForAssignee,
   onDeleteAssigneeTodos,
+  onToggleParallel,
+  clientName = 'クライアント',
 }: GanttLeftTreeProps) {
   // インライン編集中のID（name, assignee）
   const [editingNameId, setEditingNameId] = useState<string | null>(null);
@@ -171,13 +175,13 @@ export function GanttLeftTree({
       ) : (
         /* 通常ヘッダー */
         <div className={`h-[70px] box-border border-b-2 ${borderCol} bg-slate-100 flex items-center text-xs font-bold text-slate-800`}>
-          <div className={`w-[240px] shrink-0 px-3 flex items-center space-x-1 border-r ${borderCol}`}>
+          <div className={`w-[220px] shrink-0 px-3 flex items-center space-x-1 border-r ${borderCol}`}>
             <Layers className="w-3.5 h-3.5 text-slate-600" />
             <span>工程・階層名（直接編集可）</span>
           </div>
-          <div className={`w-[90px] shrink-0 text-center border-r ${borderCol}`}>担当者</div>
-          <div className={`w-[70px] shrink-0 text-center border-r ${borderCol}`}>営業日数</div>
-          <div className="w-[70px] shrink-0 text-center">操作</div>
+          <div className={`w-[85px] shrink-0 text-center border-r ${borderCol}`}>担当者</div>
+          <div className={`w-[65px] shrink-0 text-center border-r ${borderCol}`}>営業日数</div>
+          <div className="w-[100px] shrink-0 text-center">操作</div>
         </div>
       )}
 
@@ -215,10 +219,10 @@ export function GanttLeftTree({
               key={item.schedule_id}
               className={`h-10 box-border flex items-center text-xs transition-colors group ${rowBg} ${borderClass}`}
             >
-              {/* 1. 工程名（チェックボックス + 開閉アイコン + 直接インライン編集） */}
+              {/* 1. 工程名（チェックボックス + 開閉アイコン + 直接インライン編集 + 並行バッジ） */}
               <div
                 style={{ paddingLeft: `${paddingLeft}px` }}
-                className={`w-[240px] shrink-0 flex items-center space-x-1.5 pr-2 h-full border-r ${borderCol}`}
+                className={`w-[220px] shrink-0 flex items-center space-x-1.5 pr-2 h-full border-r ${borderCol}`}
               >
                 {/* 選択チェックボックス（一括移動用） */}
                 {isTask && (
@@ -269,35 +273,68 @@ export function GanttLeftTree({
                     </button>
                   </div>
                 ) : (
-                  <span
-                    onClick={() => handleStartEditName(item)}
-                    title="クリックして名前を直接変更"
-                    className="truncate cursor-text hover:bg-amber-100/60 px-1 py-0.5 rounded-xs flex-1 transition-colors border border-transparent hover:border-amber-300"
-                  >
-                    {item.name}
-                  </span>
+                  <div className="flex items-center space-x-1 truncate flex-1">
+                    {item.is_parallel && (
+                      <span className="shrink-0 px-1 py-0.2 bg-purple-100 text-purple-700 rounded text-[9px] font-bold border border-purple-200" title="並行作業工程">
+                        並行
+                      </span>
+                    )}
+                    <span
+                      onClick={() => handleStartEditName(item)}
+                      title="クリックして名前を直接変更"
+                      className="truncate cursor-text hover:bg-amber-100/60 px-1 py-0.5 rounded-xs flex-1 transition-colors border border-transparent hover:border-amber-300"
+                    >
+                      {item.name}
+                    </span>
+                  </div>
                 )}
               </div>
 
-              {/* 2. 担当者（直接インライン編集可能） */}
-              <div className={`w-[90px] shrink-0 px-1 text-center border-r ${borderCol} h-full flex items-center justify-center`}>
+              {/* 2. 担当者（直接インライン編集可能 ＋ クイック選択） */}
+              <div className={`w-[85px] shrink-0 px-1 text-center border-r ${borderCol} h-full flex items-center justify-center relative`}>
                 {editingAssigneeId === item.schedule_id ? (
-                  <input
-                    type="text"
-                    autoFocus
-                    value={editingAssigneeValue}
-                    onChange={e => setEditingAssigneeValue(e.target.value)}
-                    onBlur={() => handleFinishEditAssignee(item.schedule_id)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') handleFinishEditAssignee(item.schedule_id);
-                      if (e.key === 'Escape') setEditingAssigneeId(null);
-                    }}
-                    className="w-full px-1 py-0.5 text-[11px] border border-blue-500 rounded-xs bg-white text-center focus:outline-hidden"
-                  />
+                  <div className="relative w-full">
+                    <input
+                      type="text"
+                      autoFocus
+                      value={editingAssigneeValue}
+                      onChange={e => setEditingAssigneeValue(e.target.value)}
+                      onBlur={() => handleFinishEditAssignee(item.schedule_id)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') handleFinishEditAssignee(item.schedule_id);
+                        if (e.key === 'Escape') setEditingAssigneeId(null);
+                      }}
+                      className="w-full px-1 py-0.5 text-[11px] border border-blue-500 rounded-xs bg-white text-center focus:outline-hidden"
+                    />
+                    {/* クイック選択メニュー */}
+                    <div className="absolute left-0 top-7 z-50 bg-white border border-slate-300 rounded shadow-md p-1 text-[10px] flex flex-col gap-1 w-24 text-left">
+                      <button
+                        type="button"
+                        onMouseDown={() => {
+                          onAssigneeChange(item.schedule_id, 'DLE');
+                          setEditingAssigneeId(null);
+                        }}
+                        className="px-1.5 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded cursor-pointer"
+                      >
+                        DLE
+                      </button>
+                      <button
+                        type="button"
+                        onMouseDown={() => {
+                          onAssigneeChange(item.schedule_id, clientName);
+                          setEditingAssigneeId(null);
+                        }}
+                        className="px-1.5 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold rounded cursor-pointer truncate"
+                        title={clientName}
+                      >
+                        {clientName}
+                      </button>
+                    </div>
+                  </div>
                 ) : (
                   <span
                     onClick={() => handleStartEditAssignee(item)}
-                    title="クリックして担当者を変更"
+                    title="クリックして担当者を変更（DLE / クライアント）"
                     className="truncate block w-full cursor-text hover:bg-amber-100/60 px-1 py-0.5 rounded-xs text-[11px] text-slate-700 transition-colors border border-transparent hover:border-amber-300"
                   >
                     {item.assignee || '-'}
@@ -306,7 +343,7 @@ export function GanttLeftTree({
               </div>
 
               {/* 3. 営業日数 */}
-              <div className={`w-[70px] shrink-0 flex items-center justify-center border-r ${borderCol} h-full`}>
+              <div className={`w-[65px] shrink-0 flex items-center justify-center border-r ${borderCol} h-full`}>
                 {isTask ? (
                   <div className="flex items-center space-x-0.5">
                     <input
@@ -319,7 +356,7 @@ export function GanttLeftTree({
                           onDurationChange(item.schedule_id, val);
                         }
                       }}
-                      className="w-10 text-center py-0.5 px-0.5 border border-slate-300 group-hover:border-slate-400 rounded-xs text-[11px] bg-white focus:outline-hidden focus:ring-1 focus:ring-blue-500 font-bold text-slate-800"
+                      className="w-9 text-center py-0.5 px-0.5 border border-slate-300 group-hover:border-slate-400 rounded-xs text-[11px] bg-white focus:outline-hidden focus:ring-1 focus:ring-blue-500 font-bold text-slate-800"
                     />
                     <span className="text-[10px] text-slate-500">日</span>
                   </div>
@@ -330,8 +367,23 @@ export function GanttLeftTree({
                 )}
               </div>
 
-              {/* 4. 操作: 「親階層へ移動」＋「直後へ挿入」＋「削除」 */}
-              <div className="w-[70px] shrink-0 flex items-center justify-center space-x-1 h-full px-0.5 relative">
+              {/* 4. 操作: 「並行切替」＋「親階層へ移動」＋「直後へ挿入」＋「削除」 */}
+              <div className="w-[100px] shrink-0 flex items-center justify-center space-x-1 h-full px-0.5 relative">
+                {/* 並行切り替えボタン */}
+                {isTask && onToggleParallel && (
+                  <button
+                    onClick={() => onToggleParallel(item.schedule_id)}
+                    className={`px-1 py-0.5 rounded text-[10px] font-bold cursor-pointer transition-colors ${
+                      item.is_parallel
+                        ? 'bg-purple-100 text-purple-700 border border-purple-300 hover:bg-purple-200'
+                        : 'text-slate-400 hover:text-purple-600 hover:bg-slate-100 border border-transparent'
+                    }`}
+                    title={item.is_parallel ? '並行作業中（クリックで通常直列に戻す）' : '直前の工程と並行作業にする'}
+                  >
+                    {item.is_parallel ? '並行' : '直列'}
+                  </button>
+                )}
+
                 {/* 親階層移動ボタン（ご要望対応: 間違えて親なしで作った行を後からフォルダに紐付け） */}
                 {isTask && (
                   <div className="relative">
