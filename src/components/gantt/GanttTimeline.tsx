@@ -26,6 +26,7 @@ interface GanttTimelineProps {
   onTodoClick: (todo: Todo) => void;
   onCellClick?: (item: ScheduleItem, dateStr: string) => void;
   onDragMoveItem?: (item: ScheduleItem, deltaDays: number) => void;
+  rowHeights?: Record<string, number>;
 }
 
 export function GanttTimeline({
@@ -43,6 +44,7 @@ export function GanttTimeline({
   onTodoClick,
   onCellClick,
   onDragMoveItem,
+  rowHeights,
 }: GanttTimelineProps) {
   // ドラッグ＆ドロップ状態管理（日単位モード時）
   const [activeDrag, setActiveDrag] = useState<{
@@ -196,8 +198,10 @@ export function GanttTimeline({
           const isCollapsed = collapsedIds.has(item.schedule_id);
           const isCategory = item.item_type === 'category';
           const isGroup = item.item_type === 'group';
+          const syncedHeight = rowHeights?.[item.schedule_id];
+          const rowHeightStyle = syncedHeight ? { height: `${syncedHeight}px` } : undefined;
 
-          let rowBgClass = `h-10 box-border relative flex items-center border-b ${borderCol}`;
+          let rowBgClass = `min-h-10 h-10 box-border relative flex items-center border-b ${borderCol}`;
           if (isCategory) {
             rowBgClass += ' bg-slate-200/40 border-t-2 border-t-slate-700 font-bold';
           } else if (isGroup) {
@@ -209,7 +213,7 @@ export function GanttTimeline({
             const childTasks = getDescendantTasks(item.schedule_id);
 
             return (
-              <div key={item.schedule_id} className={rowBgClass}>
+              <div key={item.schedule_id} style={rowHeightStyle} className={rowBgClass}>
                 {childTasks.map(task => {
                   const { leftIndex, span, isVisible } = isWeekMode
                     ? getWeekBarPosition(task.start_date, task.end_date, calendarWeeks)
@@ -227,7 +231,7 @@ export function GanttTimeline({
                         width: `${span * currentCellWidth}px`,
                       }}
                       onClick={() => onEditItem(task)}
-                      className={`absolute top-1.5 bottom-1.5 rounded-xs border shadow-2xs cursor-pointer flex items-center justify-between px-1.5 text-[10px] truncate transition-all hover:brightness-95 hover:z-20 group/bar ${colorTheme.bg} ${colorTheme.border} ${colorTheme.text}`}
+                      className={`absolute top-1/2 -translate-y-1/2 h-7 rounded-xs border shadow-2xs cursor-pointer flex items-center justify-between px-1.5 text-[10px] truncate transition-all hover:brightness-95 hover:z-20 group/bar ${colorTheme.bg} ${colorTheme.border} ${colorTheme.text}`}
                       title={`[折りたたみサマリー] ${task.name} (${task.start_date} 〜 ${task.end_date} : ${task.duration_business_days}営業日)`}
                     >
                       <span className="truncate pr-0.5 font-medium">
@@ -255,7 +259,7 @@ export function GanttTimeline({
           const currentLeft = (leftIndex + (isDraggingThis ? activeDrag.deltaDays : 0)) * currentCellWidth;
 
           return (
-            <div key={item.schedule_id} className={rowBgClass}>
+            <div key={item.schedule_id} style={rowHeightStyle} className={rowBgClass}>
               {/* 各日付セルのクリック領域（特定日付または特定週をクリックして作業IN日に設定） */}
               {onCellClick && item.item_type === 'task' && !activeDrag && (
                 <div className="absolute inset-0 flex pointer-events-auto">
@@ -289,7 +293,7 @@ export function GanttTimeline({
                     width: `${span * currentCellWidth}px`,
                   }}
                   onMouseDown={(e) => handleBarMouseDown(e, item)}
-                  className={`absolute top-1.5 bottom-1.5 rounded-xs border shadow-2xs flex items-center justify-between px-2 text-[11px] truncate transition-all group/bar z-10 ${
+                  className={`absolute top-1/2 -translate-y-1/2 h-7 rounded-xs border shadow-2xs flex items-center justify-between px-2 text-[11px] truncate transition-all group/bar z-10 ${
                     isDraggingThis
                       ? 'opacity-80 ring-2 ring-blue-500 z-30 cursor-grabbing'
                       : isWeekMode

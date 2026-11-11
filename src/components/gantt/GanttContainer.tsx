@@ -87,6 +87,12 @@ export function GanttContainer({
   const [scheduleModalItem, setScheduleModalItem] = useState<ScheduleItem | null>(null);
   const [scheduleModalClickedDate, setScheduleModalClickedDate] = useState<string | null>(null);
 
+  // 左ツリーと右タイムラインの行高さ同期用
+  const [rowHeights, setRowHeights] = useState<Record<string, number>>({});
+  const handleRowHeightsChange = useCallback((heights: Record<string, number>) => {
+    setRowHeights(heights);
+  }, []);
+
   // スクロール同期用参照
   const timelineScrollRef = useRef<HTMLDivElement>(null);
   const leftTreeScrollRef = useRef<HTMLDivElement>(null);
@@ -678,6 +684,7 @@ export function GanttContainer({
               setIsTodoEditOpen(true);
             }}
             onDeleteAssigneeTodos={handleDeleteAssigneeTodos}
+            onRowHeightsChange={handleRowHeightsChange}
           />
         </div>
 
@@ -731,6 +738,7 @@ export function GanttContainer({
               setEditingTodo(todo);
               setIsTodoEditOpen(true);
             }}
+            rowHeights={rowHeights}
           />
         </div>
       </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   ChevronDown,
   ChevronRight,
@@ -42,6 +42,7 @@ interface GanttLeftTreeProps {
   onDeleteAssigneeTodos: (assignee: string) => void;
   onToggleParallel?: (id: string) => void;
   clientName?: string;
+  onRowHeightsChange?: (heights: Record<string, number>) => void;
 }
 
 export function GanttLeftTree({
@@ -62,10 +63,67 @@ export function GanttLeftTree({
   onDeleteAssigneeTodos,
   onToggleParallel,
   clientName = 'クライアント',
+  onRowHeightsChange,
 }: GanttLeftTreeProps) {
   // インライン編集中のID（name, assignee）
   const [editingNameId, setEditingNameId] = useState<string | null>(null);
   const [editingNameValue, setEditingNameValue] = useState<string>('');
+  const nameTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // 各行の高さを計測してタイムライン側と同期するための参照
+  const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const lastHeightsRef = useRef<Record<string, number>>({});
+
+  const measureRowHeights = useCallback(() => {
+    if (!onRowHeightsChange) return;
+    const nextHeights: Record<string, number> = {};
+    let changed = false;
+
+    rowRefs.current.forEach((el, id) => {
+      if (!el) return;
+      const h = Math.max(40, Math.round(el.getBoundingClientRect().height));
+      nextHeights[id] = h;
+      if (lastHeightsRef.current[id] !== h) {
+        changed = true;
+      }
+    });
+
+    if (
+      !changed &&
+      Object.keys(lastHeightsRef.current).length !== Object.keys(nextHeights).length
+    ) {
+      changed = true;
+    }
+
+    if (changed) {
+      lastHeightsRef.current = nextHeights;
+      onRowHeightsChange(nextHeights);
+    }
+  }, [onRowHeightsChange]);
+
+  useEffect(() => {
+    measureRowHeights();
+    if (typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(() => {
+      measureRowHeights();
+    });
+
+    rowRefs.current.forEach(el => {
+      if (el) observer.observe(el);
+    });
+
+    return () => observer.disconnect();
+  }, [items, visibleItemIds, editingNameId, editingNameValue, measureRowHeights]);
+
+  // インライン編集用テキストエリアの高さを内容に合わせて自動調整
+  useEffect(() => {
+    const el = nameTextareaRef.current;
+    if (el) {
+      el.style.height = 'auto';
+      el.style.height = `${el.scrollHeight}px`;
+    }
+  }, [editingNameId, editingNameValue]);
 
   const [editingAssigneeId, setEditingAssigneeId] = useState<string | null>(null);
   const [editingAssigneeValue, setEditingAssigneeValue] = useState<string>('');
@@ -232,12 +290,19 @@ export function GanttLeftTree({
           return (
             <div
               key={item.schedule_id}
-              className={`h-10 box-border flex items-center text-xs transition-colors group ${rowBg} ${borderClass}`}
+              ref={el => {
+                if (el) {
+                  rowRefs.current.set(item.schedule_id, el);
+                } else {
+                  rowRefs.current.delete(item.schedule_id);
+                }
+              }}
+              className={`min-h-10 box-border flex items-stretch text-xs transition-colors group ${rowBg} ${borderClass}`}
             >
               {/* 1. 工程名（チェックボックス + 開閉アイコン + 直接インライン編集 + 並行バッジ） */}
               <div
                 style={{ paddingLeft: `${paddingLeft}px` }}
-                className={`w-[220px] shrink-0 flex items-center space-x-1.5 pr-2 h-full border-r ${borderCol}`}
+                className={`w-[220px] shrink-0 flex items-center space-x-1.5 pr-2 py-1.5 border-r ${borderCol} min-w-0`}
               >
                 {/* 選択チェックボックス（一括移動用） */}
                 {isTask && (
@@ -267,28 +332,32 @@ export function GanttLeftTree({
                 )}
 
                 {editingNameId === item.schedule_id ? (
-                  <div className="flex items-center space-x-1 flex-1">
-                    <input
-                      type="text"
+                  <div className="flex items-center space-x-1 flex-1 min-w-0">
+                    <textarea
+                      ref={nameTextareaRef}
+                      rows={1}
                       autoFocus
                       value={editingNameValue}
                       onChange={e => setEditingNameValue(e.target.value)}
                       onBlur={() => handleFinishEditName(item.schedule_id)}
                       onKeyDown={e => {
-                        if (e.key === 'Enter') handleFinishEditName(item.schedule_id);
+                        if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                          e.preventDefault();
+                          handleFinishEditName(item.schedule_id);
+                        }
                         if (e.key === 'Escape') setEditingNameId(null);
                       }}
-                      className="w-full px-1.5 py-0.5 text-xs border-2 border-blue-500 rounded-xs bg-white text-slate-900 focus:outline-hidden"
+                      className="w-full px-1.5 py-0.5 text-xs border-2 border-blue-500 rounded-xs bg-white text-slate-900 focus:outline-hidden resize-none overflow-hidden leading-snug"
                     />
                     <button
                       onMouseDown={() => handleFinishEditName(item.schedule_id)}
-                      className="p-0.5 text-emerald-600 hover:bg-emerald-50 rounded-xs cursor-pointer"
+                      className="p-0.5 text-emerald-600 hover:bg-emerald-50 rounded-xs cursor-pointer shrink-0"
                     >
                       <Check className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 ) : (
-                  <div className="flex items-center space-x-1 truncate flex-1">
+                  <div className="flex items-center space-x-1 flex-1 min-w-0">
                     {item.is_parallel && (
                       <span className="shrink-0 px-1 py-0.2 bg-purple-100 text-purple-700 rounded text-[9px] font-bold border border-purple-200" title="並行作業工程">
                         並行
@@ -297,7 +366,7 @@ export function GanttLeftTree({
                     <span
                       onClick={() => handleStartEditName(item)}
                       title="クリックして名前を直接変更"
-                      className="truncate cursor-text hover:bg-amber-100/60 px-1 py-0.5 rounded-xs flex-1 transition-colors border border-transparent hover:border-amber-300"
+                      className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] leading-snug cursor-text hover:bg-amber-100/60 px-1 py-0.5 rounded-xs flex-1 min-w-0 transition-colors border border-transparent hover:border-amber-300"
                     >
                       {item.name}
                     </span>
@@ -306,7 +375,7 @@ export function GanttLeftTree({
               </div>
 
               {/* 2. 担当者（直接インライン編集可能 ＋ 候補管理・選択プルダウン） */}
-              <div className={`w-[85px] shrink-0 px-1 text-center border-r ${borderCol} h-full flex items-center justify-center relative`}>
+              <div className={`w-[85px] shrink-0 px-1 text-center border-r ${borderCol} flex items-center justify-center relative`}>
                 {editingAssigneeId === item.schedule_id ? (
                   <div className="relative w-full">
                     <input
@@ -433,7 +502,7 @@ export function GanttLeftTree({
               </div>
 
               {/* 3. 営業日数 */}
-              <div className={`w-[65px] shrink-0 flex items-center justify-center border-r ${borderCol} h-full`}>
+              <div className={`w-[65px] shrink-0 flex items-center justify-center border-r ${borderCol}`}>
                 {isTask ? (
                   <div className="flex items-center space-x-0.5">
                     <input
@@ -458,7 +527,7 @@ export function GanttLeftTree({
               </div>
 
               {/* 4. 操作: 「並行切替」＋「親階層へ移動」＋「直後へ挿入」＋「削除」 */}
-              <div className="w-[100px] shrink-0 flex items-center justify-center space-x-1 h-full px-0.5 relative">
+              <div className="w-[100px] shrink-0 flex items-center justify-center space-x-1 px-0.5 relative">
                 {/* 並行切り替えボタン */}
                 {isTask && onToggleParallel && (
                   <button

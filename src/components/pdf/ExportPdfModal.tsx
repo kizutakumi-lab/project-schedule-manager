@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { X, Printer, LayoutGrid, Table, Calendar, Shrink, ZoomIn, ZoomOut } from 'lucide-react';
 import { Project, ScheduleItem, Todo } from '@/types';
 import {
@@ -39,6 +39,48 @@ export function ExportPdfModal({
 
   const [showAssignee, setShowAssignee] = useState(false); // クライアント提出のためデフォルト非表示
   const [showTodos, setShowTodos] = useState(true);
+
+  // 左側工程名折り返しに伴う左右の行高さ同期
+  const [pdfRowHeights, setPdfRowHeights] = useState<Record<string, number>>({});
+  const pdfRowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const lastPdfHeightsRef = useRef<Record<string, number>>({});
+
+  const measurePdfRowHeights = useCallback(() => {
+    const nextHeights: Record<string, number> = {};
+    let changed = false;
+
+    pdfRowRefs.current.forEach((el, id) => {
+      if (!el) return;
+      const h = Math.max(28, Math.round(el.getBoundingClientRect().height));
+      nextHeights[id] = h;
+      if (lastPdfHeightsRef.current[id] !== h) {
+        changed = true;
+      }
+    });
+
+    if (
+      !changed &&
+      Object.keys(lastPdfHeightsRef.current).length !== Object.keys(nextHeights).length
+    ) {
+      changed = true;
+    }
+
+    if (changed) {
+      lastPdfHeightsRef.current = nextHeights;
+      setPdfRowHeights(nextHeights);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen || exportMode !== 'gantt') return;
+    measurePdfRowHeights();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => measurePdfRowHeights());
+    pdfRowRefs.current.forEach(el => {
+      if (el) observer.observe(el);
+    });
+    return () => observer.disconnect();
+  }, [isOpen, exportMode, items, showAssignee, measurePdfRowHeights]);
 
   // カレンダー全期間
   const calendarStart = calendarDays[0]?.dateStr || project.start_date || '2025-04-01';
@@ -268,23 +310,29 @@ export function ExportPdfModal({
                       return (
                         <div
                           key={item.schedule_id}
-                          className={`h-7 box-border flex items-center text-[10px] ${bgClass} ${borderClass}`}
+                          ref={el => {
+                            if (el) pdfRowRefs.current.set(item.schedule_id, el);
+                            else pdfRowRefs.current.delete(item.schedule_id);
+                          }}
+                          className={`min-h-7 box-border flex items-stretch text-[10px] ${bgClass} ${borderClass}`}
                         >
                           <div
                             style={{ paddingLeft: `${paddingLeft}px` }}
-                            className="w-[190px] shrink-0 truncate pr-1 border-r border-slate-300 h-full flex items-center"
+                            className="w-[190px] shrink-0 pr-1 py-1 border-r border-slate-300 flex items-center min-w-0"
                             title={item.name}
                           >
-                            {isGrp && '└ '}
-                            {item.item_type === 'task' && '・'}
-                            {item.name}
+                            <span className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] leading-tight">
+                              {isGrp && '└ '}
+                              {item.item_type === 'task' && '・'}
+                              {item.name}
+                            </span>
                           </div>
                           {showAssignee && (
-                            <div className="w-[65px] shrink-0 text-center truncate px-1 border-r border-slate-300 h-full flex items-center justify-center text-[9px] text-slate-600">
+                            <div className="w-[65px] shrink-0 text-center truncate px-1 border-r border-slate-300 flex items-center justify-center text-[9px] text-slate-600">
                               {item.assignee || '-'}
                             </div>
                           )}
-                          <div className="w-[45px] shrink-0 text-center font-medium h-full flex items-center justify-center text-[9px]">
+                          <div className="w-[45px] shrink-0 text-center font-medium flex items-center justify-center text-[9px]">
                             {item.duration_business_days ? `${item.duration_business_days}日` : '-'}
                           </div>
                         </div>
@@ -380,22 +428,27 @@ export function ExportPdfModal({
 
                               const colorTheme = getTaskColorTheme(item.name, item.item_type);
 
-                              let rowClass = 'h-7 box-border relative flex items-center border-b border-slate-300';
+                              let rowClass = 'min-h-7 h-7 box-border relative flex items-center border-b border-slate-300';
                               if (isCat) {
                                 rowClass += ' bg-slate-200/40 border-t-2 border-t-slate-700 font-bold';
                               } else if (isGrp) {
                                 rowClass += ' bg-slate-100/30';
                               }
+                              const syncedHeight = pdfRowHeights[item.schedule_id];
 
                               return (
-                                <div key={item.schedule_id} className={rowClass}>
+                                <div
+                                  key={item.schedule_id}
+                                  style={syncedHeight ? { height: `${syncedHeight}px` } : undefined}
+                                  className={rowClass}
+                                >
                                   {isVisible && leftIndex >= 0 && (
                                     <div
                                       style={{
                                         left: `${leftIndex * weekCellWidth}px`,
                                         width: `${span * weekCellWidth}px`,
                                       }}
-                                      className={`absolute top-1 bottom-1 rounded-xs border shadow-2xs flex items-center px-1 text-[8px] truncate ${colorTheme.bg} ${colorTheme.border} ${colorTheme.text}`}
+                                      className={`absolute top-1/2 -translate-y-1/2 h-5 rounded-xs border shadow-2xs flex items-center px-1 text-[8px] truncate ${colorTheme.bg} ${colorTheme.border} ${colorTheme.text}`}
                                       title={`${item.name} (${item.start_date} 〜 ${item.end_date})`}
                                     >
                                       <span className="truncate">{item.name}</span>
@@ -518,22 +571,27 @@ export function ExportPdfModal({
 
                               const colorTheme = getTaskColorTheme(item.name, item.item_type);
 
-                              let rowClass = 'h-7 box-border relative flex items-center border-b border-slate-300';
+                              let rowClass = 'min-h-7 h-7 box-border relative flex items-center border-b border-slate-300';
                               if (isCat) {
                                 rowClass += ' bg-slate-200/40 border-t-2 border-t-slate-700 font-bold';
                               } else if (isGrp) {
                                 rowClass += ' bg-slate-100/30';
                               }
+                              const syncedHeight = pdfRowHeights[item.schedule_id];
 
                               return (
-                                <div key={item.schedule_id} className={rowClass}>
+                                <div
+                                  key={item.schedule_id}
+                                  style={syncedHeight ? { height: `${syncedHeight}px` } : undefined}
+                                  className={rowClass}
+                                >
                                   {isVisible && leftIndex >= 0 && (
                                     <div
                                       style={{
                                         left: `${leftIndex * dayCellWidth}px`,
                                         width: `${span * dayCellWidth}px`,
                                       }}
-                                      className={`absolute top-1 bottom-1 rounded-xs border shadow-2xs flex items-center px-1 text-[8px] truncate ${colorTheme.bg} ${colorTheme.border} ${colorTheme.text}`}
+                                      className={`absolute top-1/2 -translate-y-1/2 h-5 rounded-xs border shadow-2xs flex items-center px-1 text-[8px] truncate ${colorTheme.bg} ${colorTheme.border} ${colorTheme.text}`}
                                     >
                                       <span className="truncate">{item.name}</span>
                                     </div>
