@@ -15,6 +15,8 @@ import {
   Info,
   Sparkles,
   Sliders,
+  Calendar as CalendarIcon,
+  Layers,
 } from 'lucide-react';
 import { Project, ScheduleItem, Todo } from '@/types';
 import {
@@ -62,15 +64,14 @@ export function ExportPdfModal({
   // 手動ズーム倍率 (70%〜220%)
   const [zoomPercent, setZoomPercent] = useState<number>(100);
 
-  // ★重要: PDF書き出し画面側で余白を自由に調整！
-  // 'narrow': 狭い (6mm) - 端が切れず、表を最大化できる推奨値
-  // 'normal': 標準 (12mm) - バランス重視
-  // 'wide': 広め (18mm) - ゆったり
-  // 'minimal': 極小 (3mm) - 限界まで最大化
+  // 用紙の余白設定（PDF書き出し画面側で調整）
   const [marginSize, setMarginSize] = useState<'minimal' | 'narrow' | 'normal' | 'wide'>('narrow');
 
   // 行の高さ（'auto': 用紙縦一杯に自動最大化・上下余白ゼロ | 'max': 特大80px | 'large': 大56px | 'normal': 標準38px | 'compact': 極小24px）
   const [rowDensity, setRowDensity] = useState<'auto' | 'max' | 'large' | 'normal' | 'compact'>('auto');
+
+  // ★新機能: 折りたたみ行の2段（千鳥）配置モード（文字隠れを根本解消・初期ON）
+  const [enableDualLane, setEnableDualLane] = useState<boolean>(true);
 
   const [showAssignee, setShowAssignee] = useState(false);
   const [showTodos, setShowTodos] = useState(true);
@@ -86,6 +87,15 @@ export function ExportPdfModal({
       setPdfCollapsedIds(new Set(initialCollapsedIds));
     }
   }, [isOpen, initialCollapsedIds]);
+
+  // 今日の日付文字列 (YYYY-MM-DD)
+  const todayDateStr = useMemo(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }, []);
 
   // 全アイテムマップ
   const itemMap = useMemo(() => {
@@ -107,7 +117,7 @@ export function ExportPdfModal({
     return parentIdSet;
   }, [items]);
 
-  // 指定した親アイテム配下の子孫タスク群を取得するヘルパー（通常画面同様に横一列に並べる用）
+  // 指定した親アイテム配下の子孫タスク群を取得するヘルパー
   const getDescendantTasks = useCallback(
     (parentId: string): ScheduleItem[] => {
       const tasks: ScheduleItem[] = [];
@@ -247,20 +257,19 @@ export function ExportPdfModal({
     let count = visibleItems.length;
     if (showTodos && todos.length > 0) {
       const todoAssignees = new Set(todos.map(t => t.assignee || '未設定'));
-      count += todoAssignees.size + 1; // ヘッダー + 担当行
+      count += todoAssignees.size + 1;
     }
     return Math.max(1, count);
   }, [visibleItems.length, showTodos, todos]);
 
-  // ★重要: 余白（marginMm）を考慮した用紙縦一杯フィットの正確な計算
-  // A4縦: 全高297mm ≒ 約1123px / A4横: 全高210mm ≒ 約794px
+  // 余白（marginMm）を考慮した用紙縦一杯フィットの正確な計算
   const autoRowHeight = useMemo(() => {
     const paperHeightPx = isLandscape ? 794 : 1123;
-    const marginPx = Math.round(marginMm * 2 * 3.78); // 上下余白合計px
-    const headerFooterPx = 135; // 表題・案件情報・表ヘッダー・フッター
+    const marginPx = Math.round(marginMm * 2 * 3.78);
+    const headerFooterPx = 140;
     const availablePrintHeight = Math.max(250, paperHeightPx - marginPx - headerFooterPx);
     const computed = Math.floor(availablePrintHeight / totalVisibleRowCount);
-    return Math.min(130, Math.max(24, computed));
+    return Math.min(130, Math.max(26, computed));
   }, [isLandscape, marginMm, totalVisibleRowCount]);
 
   // 実際の行の高さ（px）
@@ -272,7 +281,7 @@ export function ExportPdfModal({
     return 24;
   }, [rowDensity, autoRowHeight]);
 
-  // 行の高さに応じたバーの太さとフォントサイズ
+  // 行の高さに応じたスタイル
   const rowStyleConfig = useMemo(() => {
     const h = currentRowHeight;
     if (h >= 85) {
@@ -339,6 +348,21 @@ export function ExportPdfModal({
     [timeUnit, calendarHalfWeeks, calendarWeeks, calendarStart, calendarEnd, calendarDays.length]
   );
 
+  // 本日（Today）のタイムライン内でのパーセンテージ位置（0〜100%）
+  const todayPosition = useMemo(() => {
+    if (todayDateStr < calendarStart || todayDateStr > calendarEnd) return null;
+    const { leftIndex, isVisible } = calculateBar(todayDateStr, todayDateStr);
+    if (!isVisible || leftIndex < 0) return null;
+    return ((leftIndex + 0.5) / totalCols) * 100;
+  }, [todayDateStr, calendarStart, calendarEnd, calculateBar, totalCols]);
+
+  // 現在進行中のタスク（本日が該当期間内のタスク一覧）
+  const activeTodayTasks = useMemo(() => {
+    return items.filter(
+      item => item.item_type === 'task' && item.start_date <= todayDateStr && todayDateStr <= item.end_date
+    );
+  }, [items, todayDateStr]);
+
   // 行高さ同期
   const [pdfRowHeights, setPdfRowHeights] = useState<Record<string, number>>({});
   const pdfRowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -396,7 +420,7 @@ export function ExportPdfModal({
 
   return (
     <div className="pdf-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-xs p-4">
-      {/* 印刷ダイアログ用の動的@page & 印刷完全隔離スタイル（自前パディングによりブラウザ設定に関わらず端が絶対に切れない！） */}
+      {/* 印刷ダイアログ用の動的@page & 印刷完全隔離スタイル */}
       <style dangerouslySetInnerHTML={{ __html: `
         @media print {
           @page {
@@ -420,38 +444,19 @@ export function ExportPdfModal({
           .no-print {
             display: none !important;
           }
-          .pdf-modal-overlay {
+          .pdf-modal-overlay,
+          .pdf-modal-container,
+          .pdf-modal-scroll-area {
             position: static !important;
             background: #ffffff !important;
-            backdrop-filter: none !important;
             padding: 0 !important;
             margin: 0 !important;
             display: block !important;
             width: 100% !important;
             height: 100% !important;
-            overflow: visible !important;
-          }
-          .pdf-modal-container {
             border: none !important;
             box-shadow: none !important;
-            max-width: none !important;
-            max-height: none !important;
-            width: 100% !important;
-            height: 100% !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            background: #ffffff !important;
-            border-radius: 0 !important;
-            overflow: visible !important;
-          }
-          .pdf-modal-scroll-area {
-            background: #ffffff !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            overflow: visible !important;
-            display: block !important;
-            width: 100% !important;
-            height: 100% !important;
+            overflow: hidden !important;
           }
           #printable-schedule {
             display: block !important;
@@ -490,15 +495,15 @@ export function ExportPdfModal({
               <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
                 余白: {marginMm}mm
               </span>
-              {rowDensity === 'auto' && (
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 flex items-center space-x-1">
-                  <Sparkles className="w-3 h-3 text-amber-600" />
-                  <span>用紙縦一杯フィット中</span>
+              {enableDualLane && (
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 flex items-center space-x-1">
+                  <Sparkles className="w-3 h-3 text-rose-600" />
+                  <span>2段千鳥配置（文字埋もれ防止中）</span>
                 </span>
               )}
             </h2>
             <p className="text-[11px] text-slate-500">
-              クライアント提出用資料（余白調整機能・用紙1枚ストレッチ配置・端切れ防止）
+              クライアント提出用資料（文字埋もれ防止・本日マーカー・余白調整・用紙1枚収まり）
             </p>
           </div>
           <button
@@ -550,7 +555,7 @@ export function ExportPdfModal({
                     ? 'bg-blue-600 text-white'
                     : 'bg-white text-slate-700 hover:bg-slate-50'
                 }`}
-                title="A4横向き（ガントチャートを横長に広く表示）"
+                title="A4横向き"
               >
                 A4 横向き
               </button>
@@ -562,7 +567,7 @@ export function ExportPdfModal({
                     ? 'bg-blue-600 text-white'
                     : 'bg-white text-slate-700 hover:bg-slate-50'
                 }`}
-                title="A4縦向き（行数が多い場合に縦長に表示）"
+                title="A4縦向き"
               >
                 A4 縦向き
               </button>
@@ -611,10 +616,10 @@ export function ExportPdfModal({
               </div>
             )}
 
-            {/* ★新設: 用紙余白調整（PDF画面側で自由に変更可能） */}
+            {/* 用紙余白調整 */}
             <div className="flex items-center space-x-1 bg-white px-2 py-1 rounded-md border border-slate-300 shadow-2xs">
               <Sliders className="w-3.5 h-3.5 text-indigo-600" />
-              <span className="text-slate-700 font-bold text-[11px]">用紙余白:</span>
+              <span className="text-slate-700 font-bold text-[11px]">余白:</span>
               <button
                 type="button"
                 onClick={() => setMarginSize('narrow')}
@@ -623,9 +628,9 @@ export function ExportPdfModal({
                     ? 'bg-indigo-600 text-white shadow-xs'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
-                title="狭い (6mm)：端が絶対に切れず、表を最大化できる最適値（推奨）"
+                title="狭い (6mm)：端が切れず表を最大化（推奨）"
               >
-                狭い(6mm・推奨)
+                狭い(6mm)
               </button>
               <button
                 type="button"
@@ -635,7 +640,7 @@ export function ExportPdfModal({
                     ? 'bg-indigo-600 text-white shadow-xs'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
-                title="標準 (12mm)：落ち着いたバランスの良い余白"
+                title="標準 (12mm)"
               >
                 標準(12mm)
               </button>
@@ -647,7 +652,7 @@ export function ExportPdfModal({
                     ? 'bg-indigo-600 text-white shadow-xs'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
-                title="広め (18mm)：メモ欄や余白を多く取りたい場合"
+                title="広め (18mm)"
               >
                 広め(18mm)
               </button>
@@ -659,7 +664,7 @@ export function ExportPdfModal({
                     ? 'bg-indigo-600 text-white shadow-xs'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
-                title="極小 (3mm)：限界まで表を大きくしたい場合"
+                title="極小 (3mm)"
               >
                 極小(3mm)
               </button>
@@ -686,9 +691,26 @@ export function ExportPdfModal({
               </button>
             </div>
 
+            {/* ★文字埋もれ防止：2段（千鳥）配置トグル */}
+            {exportMode === 'gantt' && (
+              <button
+                type="button"
+                onClick={() => setEnableDualLane(prev => !prev)}
+                className={`px-2 py-1 rounded-md border text-[11px] font-bold flex items-center space-x-1 shadow-2xs cursor-pointer transition-colors ${
+                  enableDualLane
+                    ? 'bg-rose-50 border-rose-300 text-rose-700 hover:bg-rose-100'
+                    : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'
+                }`}
+                title="折りたたんだ行内のタスクを上段（作業）と下段（確認）の2段に振り分け、狭い日程の文字が重なって隠れるのを防止します"
+              >
+                <Layers className="w-3.5 h-3.5 text-rose-600" />
+                <span>文字埋もれ防止（2段千鳥配置）: {enableDualLane ? 'ON' : 'OFF'}</span>
+              </button>
+            )}
+
             {/* 行の高さ（用紙縦一杯・上下の余白解消） */}
             <div className="flex items-center space-x-1 bg-white px-2 py-1 rounded-md border border-slate-300 shadow-2xs">
-              <span className="text-slate-700 font-bold text-[11px]">行の高さ:</span>
+              <span className="text-slate-700 font-bold text-[11px]">行高:</span>
               <button
                 type="button"
                 onClick={() => setRowDensity('auto')}
@@ -699,7 +721,7 @@ export function ExportPdfModal({
                 }`}
                 title="用紙の縦サイズに合わせて1行の高さを自動最大化（上下余白ゼロ・推奨）"
               >
-                用紙一杯（推奨: {autoRowHeight}px）
+                用紙一杯（{autoRowHeight}px）
               </button>
               <button
                 type="button"
@@ -745,7 +767,7 @@ export function ExportPdfModal({
                     ? 'bg-slate-800 text-white font-bold'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
-                title="極小（24px・行数が多い場合に1枚に収める）"
+                title="極小（24px）"
               >
                 極小
               </button>
@@ -753,7 +775,7 @@ export function ExportPdfModal({
 
             {/* 表の横幅制御（用紙全幅フィット / 手動ズーム） */}
             <div className="flex items-center space-x-1.5 bg-white px-2 py-1 rounded-md border border-slate-300 shadow-2xs">
-              <span className="text-slate-700 font-bold text-[11px]">表の幅:</span>
+              <span className="text-slate-700 font-bold text-[11px]">表幅:</span>
               <button
                 type="button"
                 onClick={() => {
@@ -765,7 +787,7 @@ export function ExportPdfModal({
                     ? 'bg-blue-600 text-white shadow-xs'
                     : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                 }`}
-                title="用紙の右端までピッタリ100%均等ストレッチ（右余白ゼロ・推奨）"
+                title="全幅フィット（推奨）"
               >
                 全幅フィット（推奨）
               </button>
@@ -863,9 +885,15 @@ export function ExportPdfModal({
                   )}
                 </div>
               </div>
-              <div className="text-right text-[11px] text-slate-500">
+              <div className="text-right text-[11px] text-slate-600">
                 <div>発行日: {todayStr}</div>
-                {showAssignee && <div>案件担当: {project.owner}</div>}
+                {activeTodayTasks.length > 0 && (
+                  <div className="mt-0.5 font-bold text-rose-600 flex items-center justify-end space-x-1">
+                    <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse inline-block" />
+                    <span>本日進行中の工程: {activeTodayTasks.map(t => t.name).join(' / ')}</span>
+                  </div>
+                )}
+                {showAssignee && <div className="text-slate-500">案件担当: {project.owner}</div>}
               </div>
             </div>
 
@@ -1012,14 +1040,14 @@ export function ExportPdfModal({
                   {/* 2. 右側: カレンダー ＋ ガントバー（用紙幅100%均等ストレッチ） */}
                   <div
                     style={autoFitWidth ? undefined : { width: `${manualTimelineWidth}px` }}
-                    className={`timeline-stretch-container overflow-x-auto print:overflow-visible bg-white ${
+                    className={`timeline-stretch-container overflow-x-auto print:overflow-visible bg-white relative ${
                       autoFitWidth ? 'flex-1 w-full min-w-0' : 'shrink-0'
                     }`}
                   >
                     {/* カレンダーヘッダー */}
                     {timeUnit === 'half-week' ? (
                       /* A. 1/2週（半週）ヘッダー */
-                      <div className="h-[46px] border-b-2 border-slate-600 select-none bg-slate-50 w-full">
+                      <div className="h-[46px] border-b-2 border-slate-600 select-none bg-slate-50 w-full relative">
                         <div className="h-[22px] flex border-b border-slate-300 font-bold text-[10px] text-slate-800 bg-slate-100 w-full">
                           {halfWeekMonthGroups.map((mg, idx) => (
                             <div
@@ -1057,7 +1085,7 @@ export function ExportPdfModal({
                       </div>
                     ) : timeUnit === 'week' ? (
                       /* B. 週単位ヘッダー */
-                      <div className="h-[46px] border-b-2 border-slate-600 select-none bg-slate-50 w-full">
+                      <div className="h-[46px] border-b-2 border-slate-600 select-none bg-slate-50 w-full relative">
                         <div className="h-[22px] flex border-b border-slate-300 font-bold text-[10px] text-slate-800 bg-slate-100 w-full">
                           {weekMonthGroups.map((mg, idx) => (
                             <div
@@ -1092,7 +1120,7 @@ export function ExportPdfModal({
                       </div>
                     ) : (
                       /* C. 日単位ヘッダー */
-                      <div className="h-[46px] border-b-2 border-slate-600 select-none bg-slate-50 w-full">
+                      <div className="h-[46px] border-b-2 border-slate-600 select-none bg-slate-50 w-full relative">
                         <div className="h-[24px] flex border-b border-slate-300 font-bold text-[9px] text-slate-700 w-full">
                           {calendarDays.map(day => (
                             <div
@@ -1130,6 +1158,19 @@ export function ExportPdfModal({
                             );
                           })}
                         </div>
+                      </div>
+                    )}
+
+                    {/* ★本日マーカー（赤い縦線 ＋ 上部フラグ） */}
+                    {todayPosition !== null && (
+                      <div
+                        style={{ left: `${todayPosition}%` }}
+                        className="absolute top-0 bottom-0 pointer-events-none z-30 flex flex-col items-center"
+                      >
+                        <div className="bg-rose-600 text-white font-bold text-[8px] px-1 py-0.2 rounded-b-xs shadow-xs uppercase tracking-tight whitespace-nowrap">
+                          本日 {todayDateStr.slice(5)}
+                        </div>
+                        <div className="w-[2px] h-full bg-rose-500/80 border-r border-dashed border-rose-300" />
                       </div>
                     )}
 
@@ -1193,10 +1234,11 @@ export function ExportPdfModal({
                           }
                           const syncedHeight = pdfRowHeights[item.schedule_id] || rowStyleConfig.heightPx;
 
-                          // ★重要: 折りたたまれている親行の場合、通常画面同様に「配下の子タスクを横一列に並べて全表示」！
-                          // タスク名は横幅を100%活用し、日数は改行して下に配置する2段レイアウト！
+                          // ★重要: 折りたたまれている親行の場合
+                          // 2段千鳥配置（上段: 作業系 / 下段: 確認系・偶数）＋ はみ出しクリアバッジで「文字埋もれを完全撲滅」！
                           if ((isCat || isGrp) && isCollapsed) {
                             const childTasks = getDescendantTasks(item.schedule_id);
+                            const isDual = enableDualLane && syncedHeight >= 46;
 
                             return (
                               <div
@@ -1204,7 +1246,7 @@ export function ExportPdfModal({
                                 style={{ height: `${syncedHeight}px`, minHeight: `${syncedHeight}px` }}
                                 className={rowClass}
                               >
-                                {childTasks.map(task => {
+                                {childTasks.map((task, taskIdx) => {
                                   const { leftIndex, span, isVisible } = calculateBar(
                                     task.start_date,
                                     task.end_date
@@ -1220,31 +1262,61 @@ export function ExportPdfModal({
                                     ? `${(span / totalCols) * 100}%`
                                     : `${span * manualCellWidth}px`;
 
+                                  // 本日進行中のタスク判定
+                                  const isTodayActive =
+                                    task.start_date <= todayDateStr && todayDateStr <= task.end_date;
+
+                                  // 2段千鳥レーン振り分け:
+                                  // 「確認」「チェック」「レビュー」等の確認タスク、または偶数番目を下段(lane=1)に
+                                  const isReviewTask = /確認|チェック|レビュー/.test(task.name);
+                                  const lane = isDual ? (isReviewTask ? 1 : (taskIdx % 2)) : 0;
+
+                                  const barH = isDual
+                                    ? Math.min(36, Math.max(26, Math.round(syncedHeight * 0.44)))
+                                    : rowStyleConfig.barHeight;
+                                  const barTop = isDual
+                                    ? (lane === 0 ? 5 : Math.round(syncedHeight * 0.50))
+                                    : Math.round((syncedHeight - barH) / 2);
+
                                   return (
                                     <div
                                       key={task.schedule_id}
                                       style={{
                                         left: leftStyle,
                                         width: widthStyle,
-                                        height: `${rowStyleConfig.barHeight}px`,
+                                        top: `${barTop}px`,
+                                        height: `${barH}px`,
+                                        zIndex: isTodayActive ? 25 : (lane === 0 ? 12 : 14),
                                       }}
-                                      className={`absolute top-1/2 -translate-y-1/2 rounded-sm border shadow-2xs flex flex-col justify-center px-1.5 py-0.5 leading-tight overflow-hidden transition-all ${colorTheme.bg} ${colorTheme.border} ${colorTheme.text}`}
+                                      className={`absolute rounded-xs border shadow-2xs flex items-center transition-all ${colorTheme.bg} ${colorTheme.border} ${
+                                        isTodayActive ? 'ring-2 ring-amber-500 shadow-md font-extrabold' : ''
+                                      }`}
                                       title={`${task.name} (${task.start_date} 〜 ${task.end_date} : ${task.duration_business_days}営業日)`}
                                     >
-                                      {/* 上段: タスク名（横幅を100%フル活用して文字隠れを防止） */}
-                                      <span
-                                        className={`font-bold ${rowStyleConfig.titleSize} leading-snug truncate block w-full`}
-                                      >
-                                        {task.name}
-                                      </span>
-                                      {/* 下段: 日数を改行して下に配置 */}
-                                      {task.duration_business_days > 0 && (
-                                        <span
-                                          className={`${rowStyleConfig.subSize} opacity-90 font-mono leading-none mt-0.5 block truncate`}
+                                      {/* テキストラベルコンテナ: overflow-visible で文字が絶対に隠れない！ */}
+                                      <div className="absolute left-1 flex items-center whitespace-nowrap z-20 pointer-events-none pr-1">
+                                        <div
+                                          className={`flex items-center space-x-1 px-1 py-0.5 rounded-xs leading-none ${
+                                            span <= 2
+                                              ? 'bg-slate-900/85 text-white shadow-xs font-bold'
+                                              : colorTheme.text
+                                          }`}
                                         >
-                                          {task.duration_business_days}d
-                                        </span>
-                                      )}
+                                          <span className="font-bold text-[10px] leading-tight">
+                                            {task.name}
+                                          </span>
+                                          {task.duration_business_days > 0 && (
+                                            <span className="text-[8.5px] font-mono opacity-90 leading-tight">
+                                              {task.duration_business_days}d
+                                            </span>
+                                          )}
+                                          {isTodayActive && (
+                                            <span className="bg-amber-500 text-white text-[8px] font-black px-1 py-0.2 rounded-xs leading-none">
+                                              今日
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
                                     </div>
                                   );
                                 })}
@@ -1266,6 +1338,9 @@ export function ExportPdfModal({
                             ? `${(span / totalCols) * 100}%`
                             : `${span * manualCellWidth}px`;
 
+                          const isTodayActive =
+                            item.start_date <= todayDateStr && todayDateStr <= item.end_date;
+
                           return (
                             <div
                               key={item.schedule_id}
@@ -1279,23 +1354,35 @@ export function ExportPdfModal({
                                     width: widthStyle,
                                     height: `${rowStyleConfig.barHeight}px`,
                                   }}
-                                  className={`absolute top-1/2 -translate-y-1/2 rounded-sm border shadow-2xs flex flex-col justify-center px-2 py-0.5 leading-tight overflow-hidden transition-all ${colorTheme.bg} ${colorTheme.border} ${colorTheme.text}`}
+                                  className={`absolute top-1/2 -translate-y-1/2 rounded-sm border shadow-2xs flex items-center px-1.5 py-0.5 transition-all ${colorTheme.bg} ${colorTheme.border} ${colorTheme.text} ${
+                                    isTodayActive ? 'ring-2 ring-amber-500 shadow-md font-extrabold z-20' : ''
+                                  }`}
                                   title={`${item.name} (${item.start_date} 〜 ${item.end_date})`}
                                 >
-                                  {/* 上段: タスク名 */}
-                                  <span
-                                    className={`font-bold ${rowStyleConfig.titleSize} leading-snug truncate block w-full`}
-                                  >
-                                    {item.name}
-                                  </span>
-                                  {/* 下段: 日数改行 */}
-                                  {item.duration_business_days > 0 && (
-                                    <span
-                                      className={`${rowStyleConfig.subSize} opacity-90 font-mono leading-none mt-0.5 block truncate`}
+                                  {/* テキスト表示: 幅が狭いときはオーバーフローさせて全文字表示 */}
+                                  <div className="absolute left-1 flex items-center whitespace-nowrap z-20 pointer-events-none">
+                                    <div
+                                      className={`flex items-center space-x-1 px-1 py-0.5 rounded-xs leading-none ${
+                                        span <= 2
+                                          ? 'bg-slate-900/85 text-white shadow-xs font-bold'
+                                          : colorTheme.text
+                                      }`}
                                     >
-                                      {item.duration_business_days}営業日（{item.duration_business_days}d）
-                                    </span>
-                                  )}
+                                      <span className="font-bold text-[10px] leading-tight">
+                                        {item.name}
+                                      </span>
+                                      {item.duration_business_days > 0 && (
+                                        <span className="text-[8.5px] font-mono opacity-90 leading-tight">
+                                          {item.duration_business_days}営業日（{item.duration_business_days}d）
+                                        </span>
+                                      )}
+                                      {isTodayActive && (
+                                        <span className="bg-amber-500 text-white text-[8px] font-black px-1 py-0.2 rounded-xs leading-none">
+                                          今日
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
                                 </div>
                               )}
                             </div>
