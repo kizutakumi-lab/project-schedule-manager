@@ -25,6 +25,8 @@ interface GanttLeftTreeProps {
   items: ScheduleItem[];
   collapsedIds: Set<string>;
   onToggleCollapse: (id: string) => void;
+  onCollapseToGroups?: () => void;
+  onExpandAll?: () => void;
   onEditItem: (item: ScheduleItem) => void;
   onDuplicateItem?: (id: string) => void;
   onDeleteItem: (id: string) => void;
@@ -49,6 +51,8 @@ export function GanttLeftTree({
   items,
   collapsedIds,
   onToggleCollapse,
+  onCollapseToGroups,
+  onExpandAll,
   onEditItem,
   onDeleteItem,
   onInsertItemAfter,
@@ -248,9 +252,35 @@ export function GanttLeftTree({
       ) : (
         /* 通常ヘッダー */
         <div className={`h-[70px] box-border border-b-2 ${borderCol} bg-slate-100 flex items-center text-xs font-bold text-slate-800`}>
-          <div className={`w-[220px] shrink-0 px-3 flex items-center space-x-1 border-r ${borderCol}`}>
-            <Layers className="w-3.5 h-3.5 text-slate-600" />
-            <span>工程・階層名（直接編集可）</span>
+          <div className={`w-[220px] shrink-0 px-2.5 flex items-center justify-between border-r ${borderCol}`}>
+            <div className="flex items-center space-x-1 min-w-0">
+              <Layers className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+              <span className="truncate">工程・階層名</span>
+            </div>
+            {(onCollapseToGroups || onExpandAll) && (
+              <div className="flex items-center space-x-1 text-[10px] font-normal shrink-0">
+                {onCollapseToGroups && (
+                  <button
+                    type="button"
+                    onClick={onCollapseToGroups}
+                    className="px-1.5 py-0.5 bg-white hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xs cursor-pointer shadow-2xs"
+                    title="すべての小項目を折りたたんで中項目だけで表示"
+                  >
+                    中項目
+                  </button>
+                )}
+                {onExpandAll && (
+                  <button
+                    type="button"
+                    onClick={onExpandAll}
+                    className="px-1.5 py-0.5 bg-white hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xs cursor-pointer shadow-2xs"
+                    title="すべての折りたたみを解除して全工程を表示"
+                  >
+                    全展開
+                  </button>
+                )}
+              </div>
+            )}
           </div>
           <div className={`w-[85px] shrink-0 text-center border-r ${borderCol}`}>担当者</div>
           <div className={`w-[65px] shrink-0 text-center border-r ${borderCol}`}>営業日数</div>

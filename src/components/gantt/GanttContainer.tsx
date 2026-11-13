@@ -292,6 +292,37 @@ export function GanttContainer({
     });
   }, []);
 
+  // すべての小項目を折りたたんで中項目だけで表示
+  const handleCollapseToGroups = useCallback(() => {
+    const nextCollapsed = new Set<string>();
+    const childrenMap = new Map<string, ScheduleItem[]>();
+    for (const item of items) {
+      if (item.parent_id) {
+        if (!childrenMap.has(item.parent_id)) childrenMap.set(item.parent_id, []);
+        childrenMap.get(item.parent_id)!.push(item);
+      }
+    }
+
+    for (const item of items) {
+      if (item.item_type === 'group') {
+        nextCollapsed.add(item.schedule_id);
+      } else if (item.item_type === 'category') {
+        const children = childrenMap.get(item.schedule_id) || [];
+        const hasTaskDirectly = children.some(c => c.item_type === 'task');
+        const hasGroup = children.some(c => c.item_type === 'group');
+        if (hasTaskDirectly && !hasGroup) {
+          nextCollapsed.add(item.schedule_id);
+        }
+      }
+    }
+    setCollapsedIds(nextCollapsed);
+  }, [items]);
+
+  // すべての折りたたみを解除（全展開）
+  const handleExpandAll = useCallback(() => {
+    setCollapsedIds(new Set());
+  }, []);
+
   // 今日の日付へスクロール（日表示・週表示両対応）
   const handleScrollToToday = useCallback(() => {
     if (viewMode === 'week') {
@@ -617,6 +648,8 @@ export function GanttContainer({
         onOpenTodoList={() => setIsTodoListOpen(true)}
         onOpenExportPdf={() => setIsExportPdfOpen(true)}
         onScrollToToday={handleScrollToToday}
+        onCollapseToGroups={handleCollapseToGroups}
+        onExpandAll={handleExpandAll}
         dayCellWidth={dayCellWidth}
         setDayCellWidth={setDayCellWidth}
         borderStrength={borderStrength}
@@ -656,6 +689,8 @@ export function GanttContainer({
             items={items}
             collapsedIds={collapsedIds}
             onToggleCollapse={handleToggleCollapse}
+            onCollapseToGroups={handleCollapseToGroups}
+            onExpandAll={handleExpandAll}
             onEditItem={item => {
               setEditingItem(item);
               setIsItemEditOpen(true);
@@ -815,6 +850,7 @@ export function GanttContainer({
         items={items}
         todos={todos}
         calendarDays={calendarDays}
+        initialCollapsedIds={collapsedIds}
       />
 
       <ConflictWarningModal

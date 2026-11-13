@@ -17,6 +17,9 @@ import {
   CalendarRange,
   X,
   Save,
+  FolderTree,
+  FolderMinus,
+  FolderOpen,
 } from 'lucide-react';
 import { Project } from '@/types';
 import { GridBorderStrength } from './GanttCalendarHeader';
@@ -28,6 +31,8 @@ interface GanttToolbarProps {
   onOpenTodoList: () => void;
   onOpenExportPdf: () => void;
   onScrollToToday: () => void;
+  onCollapseToGroups?: () => void;
+  onExpandAll?: () => void;
   viewMode?: 'day' | 'week';
   setViewMode?: (mode: 'day' | 'week') => void;
   dayCellWidth: number;
@@ -52,6 +57,8 @@ export function GanttToolbar({
   onOpenTodoList,
   onOpenExportPdf,
   onScrollToToday,
+  onCollapseToGroups,
+  onExpandAll,
   viewMode = 'day',
   setViewMode,
   dayCellWidth,
@@ -160,6 +167,36 @@ export function GanttToolbar({
           <Printer className="w-3.5 h-3.5 text-slate-300" />
           <span className="hidden md:inline">PDF出力</span>
         </button>
+
+        {/* 階層折りたたみ（中項目のみ表示 / 全展開） */}
+        {(onCollapseToGroups || onExpandAll) && (
+          <div className="inline-flex rounded-md shadow-2xs border border-slate-700 overflow-hidden bg-slate-800">
+            {onCollapseToGroups && (
+              <button
+                type="button"
+                onClick={onCollapseToGroups}
+                className="inline-flex items-center space-x-1 px-2.5 py-1 text-slate-200 hover:text-white hover:bg-slate-700 text-[11px] font-medium transition-colors cursor-pointer"
+                title="すべての小項目を折りたたんで中項目だけで表示します"
+              >
+                <FolderMinus className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden xl:inline">中項目のみ表示</span>
+                <span className="xl:hidden">中項目</span>
+              </button>
+            )}
+            {onExpandAll && (
+              <button
+                type="button"
+                onClick={onExpandAll}
+                className="inline-flex items-center space-x-1 px-2.5 py-1 text-slate-200 hover:text-white hover:bg-slate-700 text-[11px] font-medium transition-colors cursor-pointer border-l border-slate-700"
+                title="すべての折りたたみを解除して全工程を表示します"
+              >
+                <FolderOpen className="w-3.5 h-3.5 text-blue-400" />
+                <span className="hidden xl:inline">すべて展開</span>
+                <span className="xl:hidden">全展開</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 右エリア: 表示期間設定 + 罫線濃さ調整 + 今日へ + ズーム + 保存状態 */}
