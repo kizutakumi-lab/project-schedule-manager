@@ -647,7 +647,7 @@ export function GanttContainer({
   };
 
   return (
-    <div className="flex flex-col h-screen bg-white overflow-hidden print:hidden">
+    <div className="flex flex-col h-screen bg-white overflow-hidden">
       {/* 統合1行ヘッダーツールバー */}
       <GanttToolbar
         project={project}
@@ -683,17 +683,19 @@ export function GanttContainer({
       />
 
       {/* ご要望対応: ヘッダーと工程の間にメモ・日程消化率サマリーバーを設置（スケジュール3行分相当・リサイズ可能） */}
-      <GanttMemoSummaryBar
-        project={project}
-        startDate={activeRange.start}
-        endDate={activeRange.end}
-        memo={projectMemo}
-        onMemoChange={handleProjectMemoChange}
-        borderStrength={borderStrength}
-      />
+      <div className="no-print">
+        <GanttMemoSummaryBar
+          project={project}
+          startDate={activeRange.start}
+          endDate={activeRange.end}
+          memo={projectMemo}
+          onMemoChange={handleProjectMemoChange}
+          borderStrength={borderStrength}
+        />
+      </div>
 
       {/* ガントチャートメインボディ（左ツリー固定 ＋ 右タイムライン横スクロール） */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="no-print flex-1 flex overflow-hidden">
         {/* 左側ツリー */}
         <div
           ref={leftTreeScrollRef}
