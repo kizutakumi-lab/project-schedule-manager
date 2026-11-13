@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ChevronRight,
   FolderTree,
+  Maximize2,
   Info,
 } from 'lucide-react';
 import { Project, ScheduleItem, Todo } from '@/types';
@@ -51,14 +52,16 @@ export function ExportPdfModal({
   const [exportMode, setExportMode] = useState<'gantt' | 'table'>('gantt');
   // 用紙の向き: 'landscape' (A4横向き) | 'portrait' (A4縦向き)
   const [orientation, setOrientation] = useState<'landscape' | 'portrait'>('landscape');
-  // 時間軸単位: 'day' (1日単位・詳細) | 'half-week' (1/2週・半週) | 'week' (週単位・圧縮)
-  const [timeUnit, setTimeUnit] = useState<'day' | 'half-week' | 'week'>('half-week');
+  // 時間軸単位: 'half-week' (1/2週・半週) | 'week' (週単位) | 'day' (1日単位)
+  const [timeUnit, setTimeUnit] = useState<'half-week' | 'week' | 'day'>('half-week');
 
-  // 表示倍率（セル幅ズーム）: 80%〜180%
+  // 用紙1枚横幅自動フィットモード（デフォルトON: 2/4で切れる等の用紙はみ出しを100%防ぎ、最終日まで綺麗に収める）
+  const [autoFitWidth, setAutoFitWidth] = useState<boolean>(true);
+  // カスタムズーム倍率 (80%〜200%)
   const [zoomPercent, setZoomPercent] = useState<number>(100);
 
-  // 行の高さ・文字サイズ（大・標準・コンパクト）: 折りたたみ時は「大」にすることで用紙一杯に大きく表示！
-  const [rowDensity, setRowDensity] = useState<'large' | 'normal' | 'compact'>('large');
+  // 行の高さ（最大・大・標準・コンパクト）: 折りたたみ時に「最大」を選ぶと上下の余白がなくなり用紙いっぱいに大きく表示！
+  const [rowDensity, setRowDensity] = useState<'max' | 'large' | 'normal' | 'compact'>('max');
 
   const [showAssignee, setShowAssignee] = useState(false);
   const [showTodos, setShowTodos] = useState(true);
@@ -136,7 +139,7 @@ export function ExportPdfModal({
       }
     }
     setPdfCollapsedIds(nextCollapsed);
-    setRowDensity('large');
+    setRowDensity('max'); // 折りたたみ時は用紙上下の余白を埋めるため「最大」を推奨適用
   };
 
   // すべて展開
@@ -173,7 +176,7 @@ export function ExportPdfModal({
     });
   }, [items, pdfCollapsedIds, itemMap]);
 
-  // カレンダー全期間
+  // カレンダー全期間（開始日・終了日）
   const calendarStart = calendarDays[0]?.dateStr || project.start_date || '2025-04-01';
   const calendarEnd = calendarDays[calendarDays.length - 1]?.dateStr || project.end_date || '2025-08-31';
 
@@ -197,14 +200,49 @@ export function ExportPdfModal({
 
   const isLandscape = orientation === 'landscape';
 
-  // セル幅（ズーム率を反映）
-  const zoomFactor = zoomPercent / 100;
-  const weekCellWidth = Math.round((isLandscape ? 46 : 34) * zoomFactor);
-  const halfWeekCellWidth = Math.round((isLandscape ? 40 : 30) * zoomFactor);
-  const dayCellWidth = Math.round((isLandscape ? 18 : 14) * zoomFactor);
+  // 左側幅（工程名列・担当列・営業日列）
+  const leftNameWidth = isLandscape ? 200 : 160;
+  const leftAssigneeWidth = isLandscape ? 60 : 50;
+  const leftDurationWidth = 44;
+  const totalLeftWidth = leftNameWidth + (showAssignee ? leftAssigneeWidth : 0) + leftDurationWidth;
 
-  const currentCellWidth =
-    timeUnit === 'half-week' ? halfWeekCellWidth : timeUnit === 'week' ? weekCellWidth : dayCellWidth;
+  // 用紙の印刷可能幅（マージン6mm差し引き後、96DPI相当）
+  // A4横: 297mm - 12mm = 285mm ≒ 約1077px
+  // A4縦: 210mm - 12mm = 198mm ≒ 約748px
+  const targetPrintWidth = isLandscape ? 1040 : 740;
+  const availableTimelineWidth = Math.max(300, targetPrintWidth - totalLeftWidth);
+
+  // カレンダー総セル数
+  const totalCols =
+    timeUnit === 'half-week'
+      ? calendarHalfWeeks.length
+      : timeUnit === 'week'
+      ? calendarWeeks.length
+      : calendarDays.length;
+
+  // セル幅の計算: autoFitWidth の場合は全期間が必ず用紙1枚の右端までピッタリ収まるように自動算出！
+  const cellWidth = useMemo(() => {
+    if (autoFitWidth && totalCols > 0) {
+      const computed = Math.floor(availableTimelineWidth / totalCols);
+      // 最小幅を確保しつつ、利用可能幅にジャストフィット
+      return Math.max(14, computed);
+    }
+    // 手動ズーム時のセル幅
+    const base = timeUnit === 'half-week' ? 42 : timeUnit === 'week' ? 52 : 20;
+    return Math.max(12, Math.round(base * (zoomPercent / 100)));
+  }, [autoFitWidth, totalCols, availableTimelineWidth, timeUnit, zoomPercent]);
+
+  // タイムライン全体の幅
+  const totalTimelineWidth = totalCols * cellWidth;
+  const fullTableWidth = totalLeftWidth + totalTimelineWidth;
+
+  // 印刷時に用紙からはみ出る場合の自動スケーリング比率（1枚に100%収める）
+  const printScale = useMemo(() => {
+    if (fullTableWidth > targetPrintWidth) {
+      return Number((targetPrintWidth / fullTableWidth).toFixed(3));
+    }
+    return 1;
+  }, [fullTableWidth, targetPrintWidth]);
 
   // バー位置計算ヘルパー
   const calculateBar = useCallback(
@@ -220,33 +258,39 @@ export function ExportPdfModal({
     [timeUnit, calendarHalfWeeks, calendarWeeks, calendarStart, calendarEnd, calendarDays.length]
   );
 
-  // 左側幅（工程名列・担当列）
-  const leftNameWidth = isLandscape ? 210 : 170;
-  const leftAssigneeWidth = isLandscape ? 65 : 55;
-  const leftDurationWidth = 44;
-
-  // 行密度（大・標準・コンパクト）に応じたクラス設定
+  // 行の高さ（最大・大・標準・コンパクト）
   const rowStyleConfig = {
+    max: {
+      minHeight: 'min-h-[60px] h-[60px]',
+      py: 'py-1',
+      fontSize: 'text-[12px]',
+      barHeight: 'h-11',
+      titleSize: 'text-[11px]',
+      subSize: 'text-[9px]',
+    },
     large: {
-      minHeight: 'min-h-[42px] h-[42px]',
+      minHeight: 'min-h-[46px] h-[46px]',
       py: 'py-1',
       fontSize: 'text-[11px]',
-      barHeight: 'h-7',
-      barFontSize: 'text-[10px]',
+      barHeight: 'h-8',
+      titleSize: 'text-[10px]',
+      subSize: 'text-[8px]',
     },
     normal: {
-      minHeight: 'min-h-[30px] h-[30px]',
+      minHeight: 'min-h-[32px] h-[32px]',
       py: 'py-0.5',
       fontSize: 'text-[10px]',
-      barHeight: 'h-5',
-      barFontSize: 'text-[9px]',
+      barHeight: 'h-6',
+      titleSize: 'text-[9px]',
+      subSize: 'text-[7.5px]',
     },
     compact: {
       minHeight: 'min-h-[22px] h-[22px]',
       py: 'py-0.2',
       fontSize: 'text-[9px]',
-      barHeight: 'h-3.5',
-      barFontSize: 'text-[8px]',
+      barHeight: 'h-4',
+      titleSize: 'text-[8px]',
+      subSize: 'text-[7px]',
     },
   }[rowDensity];
 
@@ -258,7 +302,7 @@ export function ExportPdfModal({
   const measurePdfRowHeights = useCallback(() => {
     const nextHeights: Record<string, number> = {};
     let changed = false;
-    const baseH = rowDensity === 'large' ? 42 : rowDensity === 'normal' ? 30 : 22;
+    const baseH = rowDensity === 'max' ? 60 : rowDensity === 'large' ? 46 : rowDensity === 'normal' ? 32 : 22;
 
     pdfRowRefs.current.forEach((el, id) => {
       if (!el) return;
@@ -291,7 +335,7 @@ export function ExportPdfModal({
       if (el) observer.observe(el);
     });
     return () => observer.disconnect();
-  }, [isOpen, exportMode, visibleItems, showAssignee, rowDensity, zoomPercent, measurePdfRowHeights]);
+  }, [isOpen, exportMode, visibleItems, showAssignee, rowDensity, cellWidth, measurePdfRowHeights]);
 
   if (!isOpen) return null;
 
@@ -372,13 +416,14 @@ export function ExportPdfModal({
             border: none !important;
             box-shadow: none !important;
             background: #ffffff !important;
+            ${printScale < 1 ? `transform: scale(${printScale}); transform-origin: top left; width: ${fullTableWidth}px !important;` : ''}
           }
         }
       ` }} />
 
       <div className="pdf-modal-container bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-7xl max-h-[94vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* モーダルヘッダー */}
-        <div className="no-print flex items-center justify-between px-6 py-3 border-b border-slate-200 bg-slate-50 shrink-0">
+        <div className="no-print flex items-center justify-between px-6 py-2.5 border-b border-slate-200 bg-slate-50 shrink-0">
           <div>
             <h2 className="text-base font-bold text-slate-800 flex items-center space-x-2">
               <span>進行管理表 PDF / 印刷出力</span>
@@ -386,11 +431,16 @@ export function ExportPdfModal({
                 {isLandscape ? 'A4横向き' : 'A4縦向き'}
               </span>
               <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
-                {timeUnit === 'half-week' ? '1/2週（半週）' : timeUnit === 'week' ? '週単位' : '日単位'}
+                {timeUnit === 'half-week' ? '1/2週表示' : timeUnit === 'week' ? '週単位' : '日単位'}
               </span>
+              {autoFitWidth && (
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                  全期間を1枚に自動フィット中
+                </span>
+              )}
             </h2>
             <p className="text-[11px] text-slate-500">
-              クライアント提出用資料（1行折りたたみ時も子タスク詳細を横一列に全表示）
+              クライアント提出用資料（期間外の過去月非表示・全期間1枚フィット・タスク名＋日数改行2段表示）
             </p>
           </div>
           <button
@@ -402,7 +452,7 @@ export function ExportPdfModal({
         </div>
 
         {/* 出力設定バー */}
-        <div className="no-print px-6 py-2 bg-slate-100 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2.5 text-xs shrink-0">
+        <div className="no-print px-6 py-2 bg-slate-100 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs shrink-0">
           <div className="flex flex-wrap items-center gap-2">
             {/* モード切替 */}
             <div className="inline-flex rounded-md shadow-2xs border border-slate-300 overflow-hidden bg-white">
@@ -432,7 +482,7 @@ export function ExportPdfModal({
               </button>
             </div>
 
-            {/* 用紙の向き（横向き / 縦向き）切り替え */}
+            {/* 用紙の向き */}
             <div className="inline-flex rounded-md shadow-2xs border border-slate-300 overflow-hidden bg-white">
               <button
                 type="button"
@@ -460,7 +510,7 @@ export function ExportPdfModal({
               </button>
             </div>
 
-            {/* 時間軸の選択: 日 / 1/2週 / 週 */}
+            {/* 時間軸 */}
             {exportMode === 'gantt' && (
               <div className="flex items-center space-x-1 bg-white px-2 py-1 rounded-md border border-slate-300 shadow-2xs">
                 <span className="font-bold text-slate-800 text-[11px]">時間軸:</span>
@@ -484,7 +534,7 @@ export function ExportPdfModal({
                       ? 'bg-blue-600 text-white shadow-xs'
                       : 'text-slate-600 hover:text-slate-900 bg-slate-100'
                   }`}
-                  title="週単位で大幅圧縮（長期案件向け）"
+                  title="週単位で圧縮"
                 >
                   週単位
                 </button>
@@ -503,14 +553,14 @@ export function ExportPdfModal({
               </div>
             )}
 
-            {/* 階層折りたたみ制御（中項目で折りたたみ / すべて展開） */}
+            {/* 階層折りたたみ制御 */}
             <div className="flex items-center space-x-1 bg-white px-2 py-1 rounded-md border border-slate-300 shadow-2xs">
               <FolderTree className="w-3.5 h-3.5 text-slate-600" />
               <button
                 type="button"
                 onClick={handleCollapseToGroups}
                 className="px-2 py-0.5 rounded-xs text-[11px] font-bold bg-amber-500 hover:bg-amber-600 text-white cursor-pointer transition-colors shadow-2xs"
-                title="小項目をすべて折りたたみ、中項目・大項目を1行ずつコンパクトに表示します（1行の中に詳細タスクが横一列に並びます）"
+                title="小項目をすべて折りたたみ、中項目・大項目を1行ずつコンパクトに表示します（行内には子タスクが横一列に並びます）"
               >
                 中項目で折りたたみ
               </button>
@@ -524,20 +574,32 @@ export function ExportPdfModal({
               </button>
             </div>
 
-            {/* 行の高さ（密度）切替 */}
+            {/* 行の高さ（用紙上下の余白解消） */}
             <div className="flex items-center space-x-1 bg-white px-2 py-1 rounded-md border border-slate-300 shadow-2xs">
               <span className="text-slate-600 text-[11px]">行の高さ:</span>
               <button
                 type="button"
-                onClick={() => setRowDensity('large')}
+                onClick={() => setRowDensity('max')}
                 className={`px-2 py-0.5 rounded-xs text-[11px] cursor-pointer font-bold transition-colors ${
-                  rowDensity === 'large'
+                  rowDensity === 'max'
                     ? 'bg-emerald-600 text-white shadow-xs'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
-                title="表を用紙いっぱいに大きく堂々と表示（折りたたみ時に最適）"
+                title="用紙縦いっぱいに特大表示（上下の余白を完全解消・推奨）"
               >
-                大（最大化）
+                特大（用紙一杯）
+              </button>
+              <button
+                type="button"
+                onClick={() => setRowDensity('large')}
+                className={`px-1.5 py-0.5 rounded-xs text-[11px] cursor-pointer ${
+                  rowDensity === 'large'
+                    ? 'bg-slate-800 text-white font-bold'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+                title="大（ゆったり表示）"
+              >
+                大
               </button>
               <button
                 type="button"
@@ -559,47 +621,71 @@ export function ExportPdfModal({
                     ? 'bg-slate-800 text-white font-bold'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
-                title="行の高さを詰めて多数の工程を1枚に収めます"
+                title="極小（行数が多い場合に1枚に収める）"
               >
                 極小
               </button>
             </div>
 
-            {/* 表示倍率（セル幅ズーム） */}
-            <div className="flex items-center space-x-1 bg-white px-2 py-1 rounded-md border border-slate-300 shadow-2xs">
-              <span className="text-slate-600 text-[11px]">表の幅:</span>
+            {/* 表の横幅制御（1枚フィット / ズーム） */}
+            <div className="flex items-center space-x-1.5 bg-white px-2 py-1 rounded-md border border-slate-300 shadow-2xs">
+              <span className="text-slate-700 font-bold text-[11px]">表の幅:</span>
               <button
                 type="button"
-                onClick={() => setZoomPercent(prev => Math.max(70, prev - 15))}
-                className="p-0.5 text-slate-500 hover:text-slate-900 rounded cursor-pointer"
-                title="幅を縮小"
+                onClick={() => {
+                  setAutoFitWidth(true);
+                  setZoomPercent(100);
+                }}
+                className={`px-2 py-0.5 rounded-xs text-[11px] font-bold cursor-pointer transition-colors ${
+                  autoFitWidth
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+                title="全期間（開始日〜終了日まで）をA4用紙1枚の横幅にジャストフィット（2/4週で切れる問題を防ぎます）"
               >
-                <ZoomOut className="w-3.5 h-3.5" />
+                用紙1枚フィット（推奨）
               </button>
-              <span className="text-[11px] font-mono font-bold text-slate-800 w-10 text-center">
-                {zoomPercent}%
-              </span>
-              <button
-                type="button"
-                onClick={() => setZoomPercent(prev => Math.min(180, prev + 15))}
-                className="p-0.5 text-slate-500 hover:text-slate-900 rounded cursor-pointer"
-                title="幅を拡大して用紙いっぱいに広げる"
-              >
-                <ZoomIn className="w-3.5 h-3.5" />
-              </button>
+
+              <div className="flex items-center space-x-0.5 pl-1 border-l border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAutoFitWidth(false);
+                    setZoomPercent(prev => Math.max(70, prev - 15));
+                  }}
+                  className="p-0.5 text-slate-500 hover:text-slate-900 rounded cursor-pointer"
+                  title="幅を縮小"
+                >
+                  <ZoomOut className="w-3.5 h-3.5" />
+                </button>
+                <span className="text-[11px] font-mono font-bold text-slate-800 w-9 text-center">
+                  {cellWidth}px
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAutoFitWidth(false);
+                    setZoomPercent(prev => Math.min(220, prev + 15));
+                  }}
+                  className="p-0.5 text-slate-500 hover:text-slate-900 rounded cursor-pointer"
+                  title="縦行の幅を広げる（文字が隠れにくくなります）"
+                >
+                  <ZoomIn className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
 
-            <label className="flex items-center space-x-1.5 cursor-pointer select-none text-slate-700 ml-1">
+            <label className="flex items-center space-x-1 cursor-pointer select-none text-slate-700">
               <input
                 type="checkbox"
                 checked={showAssignee}
                 onChange={e => setShowAssignee(e.target.checked)}
                 className="rounded-xs text-blue-600 focus:ring-blue-500"
               />
-              <span>担当者</span>
+              <span>担当</span>
             </label>
 
-            <label className="flex items-center space-x-1.5 cursor-pointer select-none text-slate-700">
+            <label className="flex items-center space-x-1 cursor-pointer select-none text-slate-700">
               <input
                 type="checkbox"
                 checked={showTodos}
@@ -610,11 +696,7 @@ export function ExportPdfModal({
             </label>
           </div>
 
-          <div className="flex items-center space-x-2">
-            <div className="text-[10px] text-slate-500 hidden xl:flex items-center space-x-1">
-              <Info className="w-3 h-3 text-blue-500" />
-              <span>印刷設定で<strong>「背景のグラフィック」</strong>をONにしてください</span>
-            </div>
+          <div className="flex items-center space-x-2 shrink-0">
             <button
               onClick={handlePrint}
               className="inline-flex items-center space-x-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-xs font-bold shadow-sm transition-colors cursor-pointer"
@@ -632,7 +714,7 @@ export function ExportPdfModal({
             className="bg-white p-5 rounded-lg shadow-sm border border-slate-300 mx-auto text-xs text-slate-800 print:border-none print:shadow-none print:p-0 print:max-w-none w-fit print:w-full min-w-0"
           >
             {/* 提出用ヘッダー */}
-            <div className="flex items-start justify-between border-b-2 border-slate-900 pb-2.5 mb-2.5">
+            <div className="flex items-start justify-between border-b-2 border-slate-900 pb-2 mb-2">
               <div>
                 <h1 className="text-xl font-bold text-slate-900 tracking-tight">
                   {project.project_name} 進行管理表
@@ -659,7 +741,7 @@ export function ExportPdfModal({
               </div>
             </div>
 
-            {/* モードA: ガントチャート（1/2週・週単位・日単位） */}
+            {/* モードA: ガントチャート */}
             {exportMode === 'gantt' && (
               <div className="border border-slate-400 rounded-xs overflow-hidden mb-3">
                 <div className="flex overflow-x-auto print:overflow-visible">
@@ -804,7 +886,7 @@ export function ExportPdfModal({
                           {halfWeekMonthGroups.map((mg, idx) => (
                             <div
                               key={`${mg.year}-${mg.month}-${idx}`}
-                              style={{ width: `${mg.daysCount * halfWeekCellWidth}px` }}
+                              style={{ width: `${mg.daysCount * cellWidth}px` }}
                               className="px-1.5 flex items-center border-r border-slate-300 shrink-0 truncate"
                             >
                               {mg.label}
@@ -815,7 +897,7 @@ export function ExportPdfModal({
                           {calendarHalfWeeks.map(hw => (
                             <div
                               key={hw.index}
-                              style={{ width: `${halfWeekCellWidth}px` }}
+                              style={{ width: `${cellWidth}px` }}
                               className={`shrink-0 flex flex-col items-center justify-center border-r border-slate-300 leading-none ${
                                 hw.part === 'second' ? 'bg-slate-50/70' : ''
                               }`}
@@ -834,7 +916,7 @@ export function ExportPdfModal({
                           {weekMonthGroups.map((mg, idx) => (
                             <div
                               key={`${mg.year}-${mg.month}-${idx}`}
-                              style={{ width: `${mg.daysCount * weekCellWidth}px` }}
+                              style={{ width: `${mg.daysCount * cellWidth}px` }}
                               className="px-1.5 flex items-center border-r border-slate-300 shrink-0 truncate"
                             >
                               {mg.label}
@@ -845,8 +927,8 @@ export function ExportPdfModal({
                           {calendarWeeks.map(w => (
                             <div
                               key={w.startDateStr}
-                              style={{ width: `${weekCellWidth}px` }}
-                              className="shrink-0 flex items-center justify-center border-r border-slate-300"
+                              style={{ width: `${cellWidth}px` }}
+                              className="shrink-0 flex items-center justify-center border-r border-slate-300 font-bold"
                               title={`${w.startDateStr} 〜 ${w.endDateStr}`}
                             >
                               {w.label}
@@ -861,7 +943,7 @@ export function ExportPdfModal({
                           {calendarDays.map(day => (
                             <div
                               key={day.dateStr}
-                              style={{ width: `${dayCellWidth}px` }}
+                              style={{ width: `${cellWidth}px` }}
                               className={`shrink-0 flex items-center justify-center border-r border-slate-300 ${
                                 day.isWeekend || day.isHoliday ? 'bg-slate-200 text-slate-500' : ''
                               }`}
@@ -878,7 +960,7 @@ export function ExportPdfModal({
                             return (
                               <div
                                 key={day.dateStr}
-                                style={{ width: `${dayCellWidth}px` }}
+                                style={{ width: `${cellWidth}px` }}
                                 className={`shrink-0 flex items-center justify-center border-r border-slate-300 ${col}`}
                               >
                                 {day.dayOfWeekStr}
@@ -897,7 +979,7 @@ export function ExportPdfModal({
                           ? calendarHalfWeeks.map(hw => (
                               <div
                                 key={hw.index}
-                                style={{ width: `${halfWeekCellWidth}px` }}
+                                style={{ width: `${cellWidth}px` }}
                                 className={`h-full border-r border-slate-200 shrink-0 ${
                                   hw.part === 'second' ? 'bg-slate-50/40' : ''
                                 }`}
@@ -907,14 +989,14 @@ export function ExportPdfModal({
                           ? calendarWeeks.map(w => (
                               <div
                                 key={w.startDateStr}
-                                style={{ width: `${weekCellWidth}px` }}
+                                style={{ width: `${cellWidth}px` }}
                                 className="h-full border-r border-slate-200 shrink-0"
                               />
                             ))
                           : calendarDays.map(day => (
                               <div
                                 key={day.dateStr}
-                                style={{ width: `${dayCellWidth}px` }}
+                                style={{ width: `${cellWidth}px` }}
                                 className={`h-full border-r border-slate-200 shrink-0 ${
                                   day.isWeekend || day.isHoliday ? 'bg-slate-100/70' : ''
                                 }`}
@@ -938,6 +1020,7 @@ export function ExportPdfModal({
                           const syncedHeight = pdfRowHeights[item.schedule_id];
 
                           // ★重要: 折りたたまれている親行の場合、通常画面同様に「配下の子タスクを横一列に並べて全表示」！
+                          // ユーザー要望対応: タスク名は横幅を100%活用し、日数は改行して下に配置する2段レイアウト！
                           if ((isCat || isGrp) && isCollapsed) {
                             const childTasks = getDescendantTasks(item.schedule_id);
 
@@ -956,20 +1039,29 @@ export function ExportPdfModal({
                                   if (!isVisible || leftIndex < 0) return null;
 
                                   const colorTheme = getTaskColorTheme(task.name, task.item_type);
+                                  const barW = span * cellWidth;
 
                                   return (
                                     <div
                                       key={task.schedule_id}
                                       style={{
-                                        left: `${leftIndex * currentCellWidth}px`,
-                                        width: `${span * currentCellWidth}px`,
+                                        left: `${leftIndex * cellWidth}px`,
+                                        width: `${barW}px`,
                                       }}
-                                      className={`absolute top-1/2 -translate-y-1/2 ${rowStyleConfig.barHeight} rounded-xs border shadow-2xs flex items-center justify-between px-1.5 ${rowStyleConfig.barFontSize} truncate font-medium ${colorTheme.bg} ${colorTheme.border} ${colorTheme.text}`}
+                                      className={`absolute top-1/2 -translate-y-1/2 ${rowStyleConfig.barHeight} rounded-sm border shadow-2xs flex flex-col justify-center px-1 py-0.5 leading-tight overflow-hidden transition-all ${colorTheme.bg} ${colorTheme.border} ${colorTheme.text}`}
                                       title={`${task.name} (${task.start_date} 〜 ${task.end_date} : ${task.duration_business_days}営業日)`}
                                     >
-                                      <span className="truncate pr-0.5">{task.name}</span>
-                                      {task.duration_business_days > 0 && span * currentCellWidth > 38 && (
-                                        <span className="shrink-0 text-[8px] opacity-90 font-mono">
+                                      {/* 上段: タスク名（横幅を100%フル活用して文字隠れを防止） */}
+                                      <span
+                                        className={`font-bold ${rowStyleConfig.titleSize} leading-snug truncate block w-full`}
+                                      >
+                                        {task.name}
+                                      </span>
+                                      {/* 下段: 日数を改行して下に配置（ご要望対応） */}
+                                      {task.duration_business_days > 0 && barW > 24 && (
+                                        <span
+                                          className={`${rowStyleConfig.subSize} opacity-90 font-mono leading-none mt-0.5 block truncate`}
+                                        >
                                           {task.duration_business_days}d
                                         </span>
                                       )}
@@ -987,6 +1079,7 @@ export function ExportPdfModal({
                           );
 
                           const colorTheme = getTaskColorTheme(item.name, item.item_type);
+                          const barW = span * cellWidth;
 
                           return (
                             <div
@@ -997,16 +1090,24 @@ export function ExportPdfModal({
                               {isVisible && leftIndex >= 0 && (
                                 <div
                                   style={{
-                                    left: `${leftIndex * currentCellWidth}px`,
-                                    width: `${span * currentCellWidth}px`,
+                                    left: `${leftIndex * cellWidth}px`,
+                                    width: `${barW}px`,
                                   }}
-                                  className={`absolute top-1/2 -translate-y-1/2 ${rowStyleConfig.barHeight} rounded-xs border shadow-2xs flex items-center justify-between px-1.5 ${rowStyleConfig.barFontSize} truncate font-medium ${colorTheme.bg} ${colorTheme.border} ${colorTheme.text}`}
+                                  className={`absolute top-1/2 -translate-y-1/2 ${rowStyleConfig.barHeight} rounded-sm border shadow-2xs flex flex-col justify-center px-1.5 py-0.5 leading-tight overflow-hidden transition-all ${colorTheme.bg} ${colorTheme.border} ${colorTheme.text}`}
                                   title={`${item.name} (${item.start_date} 〜 ${item.end_date})`}
                                 >
-                                  <span className="truncate pr-0.5">{item.name}</span>
-                                  {item.duration_business_days > 0 && span * currentCellWidth > 42 && (
-                                    <span className="shrink-0 text-[8px] opacity-90 font-mono">
-                                      {item.duration_business_days}d
+                                  {/* 上段: タスク名 */}
+                                  <span
+                                    className={`font-bold ${rowStyleConfig.titleSize} leading-snug truncate block w-full`}
+                                  >
+                                    {item.name}
+                                  </span>
+                                  {/* 下段: 日数改行 */}
+                                  {item.duration_business_days > 0 && barW > 28 && (
+                                    <span
+                                      className={`${rowStyleConfig.subSize} opacity-90 font-mono leading-none mt-0.5 block truncate`}
+                                    >
+                                      {item.duration_business_days}営業日（{item.duration_business_days}d）
                                     </span>
                                   )}
                                 </div>
@@ -1036,7 +1137,7 @@ export function ExportPdfModal({
                                         return (
                                           <div
                                             key={hw.index}
-                                            style={{ width: `${halfWeekCellWidth}px` }}
+                                            style={{ width: `${cellWidth}px` }}
                                             className="h-full shrink-0 flex items-center justify-center p-0.5"
                                           >
                                             {match.length > 0 && (
@@ -1058,7 +1159,7 @@ export function ExportPdfModal({
                                         return (
                                           <div
                                             key={w.startDateStr}
-                                            style={{ width: `${weekCellWidth}px` }}
+                                            style={{ width: `${cellWidth}px` }}
                                             className="h-full shrink-0 flex items-center justify-center p-0.5"
                                           >
                                             {match.length > 0 && (
@@ -1077,11 +1178,12 @@ export function ExportPdfModal({
                                         return (
                                           <div
                                             key={day.dateStr}
-                                            style={{ width: `${dayCellWidth}px` }}
+                                            style={{ width: `${cellWidth}px` }}
                                             className="h-full shrink-0 flex items-center justify-center p-0.5"
                                           >
                                             {match.length > 0 && (
-                                              <div className="w-full text-center py-0.5 rounded-xs bg-blue-600 text-white font-bold text-[8px]">
+                                              <div
+                                                className="w-full text-center py-0.5 rounded-xs bg-blue-600 text-white font-bold text-[8px]">
                                                 ✓
                                               </div>
                                             )}

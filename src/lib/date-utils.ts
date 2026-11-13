@@ -110,6 +110,7 @@ export interface CalendarWeek {
 
 /**
  * 開始日〜終了日の週単位配列を生成（月曜日始まり）
+ * 指定された startDateStr より前の不要な過去月・過去日は含めずクリップする
  */
 export function generateCalendarWeeks(startDateStr: string, endDateStr: string): CalendarWeek[] {
   const start = parseISO(startDateStr);
@@ -124,17 +125,22 @@ export function generateCalendarWeeks(startDateStr: string, endDateStr: string):
     { weekStartsOn: 1 } // 月曜日始まり
   );
 
-  return weekStarts.map((wStart, idx) => {
+  const rawWeeks = weekStarts.map((wStart, idx) => {
     const wEnd = addDays(wStart, 6);
+    const effectiveStart = wStart < start ? start : wStart;
+    const effectiveEnd = wEnd > end ? end : wEnd;
+
     return {
       weekIndex: idx,
-      startDateStr: format(wStart, 'yyyy-MM-dd'),
-      endDateStr: format(wEnd, 'yyyy-MM-dd'),
-      label: `${format(wStart, 'M/d')}週`,
-      year: wStart.getFullYear(),
-      month: wStart.getMonth() + 1,
+      startDateStr: format(effectiveStart, 'yyyy-MM-dd'),
+      endDateStr: format(effectiveEnd, 'yyyy-MM-dd'),
+      label: `${format(effectiveStart, 'M/d')}週`,
+      year: effectiveStart.getFullYear(),
+      month: effectiveStart.getMonth() + 1,
     };
   });
+
+  return rawWeeks.filter(w => w.endDateStr >= startDateStr && w.startDateStr <= endDateStr);
 }
 
 /**
@@ -211,17 +217,28 @@ export interface CalendarHalfWeek {
 
 /**
  * 開始日〜終了日の1/2週（半週）単位配列を生成（縦行を週の倍にする）
+ * 指定された startDateStr より前の不要な過去月・過去日は含めずクリップする
  */
 export function generateCalendarHalfWeeks(
   startDateStr: string,
   endDateStr: string
 ): CalendarHalfWeek[] {
-  const weeks = generateCalendarWeeks(startDateStr, endDateStr);
+  const start = parseISO(startDateStr);
+  const end = parseISO(endDateStr);
+
+  if (!isValid(start) || !isValid(end) || start > end) {
+    return [];
+  }
+
+  const weekStarts = eachWeekOfInterval(
+    { start, end },
+    { weekStartsOn: 1 } // 月曜日始まり
+  );
+
   const halfWeeks: CalendarHalfWeek[] = [];
   let index = 0;
 
-  for (const w of weeks) {
-    const wStart = parseISO(w.startDateStr);
+  for (const wStart of weekStarts) {
     // 前半: 月〜水 (3日間)
     const firstStart = wStart;
     const firstEnd = addDays(wStart, 2);
@@ -229,29 +246,41 @@ export function generateCalendarHalfWeeks(
     const secondStart = addDays(wStart, 3);
     const secondEnd = addDays(wStart, 6);
 
-    halfWeeks.push({
-      index: index++,
-      startDateStr: format(firstStart, 'yyyy-MM-dd'),
-      endDateStr: format(firstEnd, 'yyyy-MM-dd'),
-      label: format(firstStart, 'M/d'),
-      subLabel: '月-水',
-      weekLabel: w.label,
-      part: 'first',
-      year: firstStart.getFullYear(),
-      month: firstStart.getMonth() + 1,
-    });
+    const firstEndStr = format(firstEnd, 'yyyy-MM-dd');
+    const firstStartStr = format(firstStart, 'yyyy-MM-dd');
+    if (firstEndStr >= startDateStr && firstStartStr <= endDateStr) {
+      const effStart = firstStart < start ? start : firstStart;
+      const effEnd = firstEnd > end ? end : firstEnd;
+      halfWeeks.push({
+        index: index++,
+        startDateStr: format(effStart, 'yyyy-MM-dd'),
+        endDateStr: format(effEnd, 'yyyy-MM-dd'),
+        label: format(effStart, 'M/d'),
+        subLabel: '月-水',
+        weekLabel: `${format(effStart, 'M/d')}週`,
+        part: 'first',
+        year: effStart.getFullYear(),
+        month: effStart.getMonth() + 1,
+      });
+    }
 
-    halfWeeks.push({
-      index: index++,
-      startDateStr: format(secondStart, 'yyyy-MM-dd'),
-      endDateStr: format(secondEnd, 'yyyy-MM-dd'),
-      label: format(secondStart, 'M/d'),
-      subLabel: '木-日',
-      weekLabel: w.label,
-      part: 'second',
-      year: secondStart.getFullYear(),
-      month: secondStart.getMonth() + 1,
-    });
+    const secondEndStr = format(secondEnd, 'yyyy-MM-dd');
+    const secondStartStr = format(secondStart, 'yyyy-MM-dd');
+    if (secondEndStr >= startDateStr && secondStartStr <= endDateStr) {
+      const effStart = secondStart < start ? start : secondStart;
+      const effEnd = secondEnd > end ? end : secondEnd;
+      halfWeeks.push({
+        index: index++,
+        startDateStr: format(effStart, 'yyyy-MM-dd'),
+        endDateStr: format(effEnd, 'yyyy-MM-dd'),
+        label: format(effStart, 'M/d'),
+        subLabel: '木-日',
+        weekLabel: `${format(wStart, 'M/d')}週`,
+        part: 'second',
+        year: effStart.getFullYear(),
+        month: effStart.getMonth() + 1,
+      });
+    }
   }
 
   return halfWeeks;
