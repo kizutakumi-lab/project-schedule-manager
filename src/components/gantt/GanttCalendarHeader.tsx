@@ -1,18 +1,26 @@
 'use client';
 
 import React from 'react';
-import { CalendarDay, CalendarWeek, MonthGroup } from '@/lib/date-utils';
+import {
+  CalendarDay,
+  CalendarWeek,
+  CalendarHalfWeek,
+  MonthGroup,
+} from '@/lib/date-utils';
 
 export type GridBorderStrength = 'normal' | 'strong' | 'bold';
 
 interface GanttCalendarHeaderProps {
-  viewMode?: 'day' | 'week';
+  viewMode?: 'day' | 'half-week' | 'week';
   calendarDays: CalendarDay[];
   monthGroups: MonthGroup[];
   dayCellWidth: number;
   calendarWeeks?: CalendarWeek[];
   weekMonthGroups?: MonthGroup[];
   weekCellWidth?: number;
+  calendarHalfWeeks?: CalendarHalfWeek[];
+  halfWeekMonthGroups?: MonthGroup[];
+  halfWeekCellWidth?: number;
   borderStrength: GridBorderStrength;
 }
 
@@ -24,6 +32,9 @@ export function GanttCalendarHeader({
   calendarWeeks = [],
   weekMonthGroups = [],
   weekCellWidth = 48,
+  calendarHalfWeeks = [],
+  halfWeekMonthGroups = [],
+  halfWeekCellWidth = 38,
   borderStrength,
 }: GanttCalendarHeaderProps) {
   // 罫線の濃さマッピング
@@ -39,6 +50,55 @@ export function GanttCalendarHeader({
     bold: 'border-slate-700',
   }[borderStrength];
 
+  // A. 1/2週単位（半週）表示モード（縦行を週の倍にする）
+  if (viewMode === 'half-week') {
+    const totalHalfWeeks = calendarHalfWeeks.length;
+    const headerWidth = totalHalfWeeks * halfWeekCellWidth;
+
+    return (
+      <div
+        style={{ width: `${headerWidth}px` }}
+        className={`sticky top-0 z-20 bg-white border-b-2 ${headerBorderCol} shadow-xs select-none h-[70px] box-border`}
+      >
+        {/* 1行目: 年月 */}
+        <div className={`flex border-b ${borderCol} bg-slate-100 text-xs font-bold text-slate-800 h-[34px] box-border`}>
+          {halfWeekMonthGroups.map((group, idx) => (
+            <div
+              key={`${group.year}-${group.month}-${idx}`}
+              style={{ width: `${group.daysCount * halfWeekCellWidth}px` }}
+              className={`px-2 flex items-center border-r ${borderCol} shrink-0 truncate`}
+            >
+              {group.label}
+            </div>
+          ))}
+        </div>
+
+        {/* 2行目: 1/2週ラベル (例: 10/19 (月-水) / 10/22 (木-日)) */}
+        <div className={`flex bg-slate-50 text-[10px] font-semibold text-slate-700 h-[36px] box-border`}>
+          {calendarHalfWeeks.map(hw => {
+            const todayStr = new Date().toISOString().split('T')[0];
+            const isCurrent = hw.startDateStr <= todayStr && todayStr <= hw.endDateStr;
+
+            return (
+              <div
+                key={hw.index}
+                style={{ width: `${halfWeekCellWidth}px` }}
+                className={`flex flex-col items-center justify-center border-r ${borderCol} shrink-0 text-center leading-tight ${
+                  isCurrent ? 'bg-blue-100 text-blue-900 font-bold' : ''
+                } ${hw.part === 'second' ? 'bg-slate-100/50' : ''}`}
+                title={`${hw.weekLabel} ${hw.subLabel} (${hw.startDateStr} 〜 ${hw.endDateStr})`}
+              >
+                <span className="font-bold">{hw.label}</span>
+                <span className="text-[8px] opacity-75">{hw.subLabel}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // B. 週単位圧縮モード
   if (viewMode === 'week') {
     const totalWeeks = calendarWeeks.length;
     const headerWidth = totalWeeks * weekCellWidth;
@@ -85,7 +145,7 @@ export function GanttCalendarHeader({
     );
   }
 
-  // 通常: 日表示モード
+  // C. 通常: 日表示モード
   const totalDays = calendarDays.length;
   const headerWidth = totalDays * dayCellWidth;
 

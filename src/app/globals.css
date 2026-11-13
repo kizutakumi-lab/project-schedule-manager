@@ -28,20 +28,28 @@ body {
   background: #94a3b8;
 }
 
-/* 印刷用スタイル (A4横向き) */
+/* 印刷用スタイル */
 @media print {
   @page {
     size: A4 landscape;
-    margin: 8mm;
+    margin: 6mm;
   }
-  body {
+  html, body {
     background: #ffffff !important;
     color: #000000 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
   }
-  .no-print {
+  .no-print,
+  .print\:hidden {
     display: none !important;
   }
   .print-only {
     display: block !important;
+  }
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 }

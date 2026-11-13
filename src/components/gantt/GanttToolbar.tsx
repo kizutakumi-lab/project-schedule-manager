@@ -33,12 +33,14 @@ interface GanttToolbarProps {
   onScrollToToday: () => void;
   onCollapseToGroups?: () => void;
   onExpandAll?: () => void;
-  viewMode?: 'day' | 'week';
-  setViewMode?: (mode: 'day' | 'week') => void;
+  viewMode?: 'day' | 'half-week' | 'week';
+  setViewMode?: (mode: 'day' | 'half-week' | 'week') => void;
   dayCellWidth: number;
   setDayCellWidth: (width: number) => void;
   weekCellWidth?: number;
   setWeekCellWidth?: (width: number) => void;
+  halfWeekCellWidth?: number;
+  setHalfWeekCellWidth?: (width: number) => void;
   borderStrength: GridBorderStrength;
   setBorderStrength: (strength: GridBorderStrength) => void;
   isSaving: boolean;
@@ -65,6 +67,8 @@ export function GanttToolbar({
   setDayCellWidth,
   weekCellWidth = 48,
   setWeekCellWidth,
+  halfWeekCellWidth = 38,
+  setHalfWeekCellWidth,
   borderStrength,
   setBorderStrength,
   isSaving,
@@ -321,7 +325,7 @@ export function GanttToolbar({
           <span className="hidden sm:inline">今日へ</span>
         </button>
 
-        {/* 日・週表示切替 */}
+        {/* 日・1/2週・週表示切替 */}
         {setViewMode && (
           <div className="flex items-center rounded-md border border-slate-700 bg-slate-800 p-0.5" title="カレンダー表示単位の切り替え">
             <button
@@ -334,6 +338,18 @@ export function GanttToolbar({
               }`}
             >
               日表示
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('half-week')}
+              className={`px-2 py-0.5 rounded text-[11px] font-bold cursor-pointer transition-colors ${
+                viewMode === 'half-week'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="1/2週単位（月〜水・木〜日）で縦行を週の倍に展開"
+            >
+              1/2週
             </button>
             <button
               type="button"
@@ -354,7 +370,9 @@ export function GanttToolbar({
         <div className="flex items-center border border-slate-700 rounded-md overflow-hidden bg-slate-800">
           <button
             onClick={() => {
-              if (viewMode === 'week' && setWeekCellWidth) {
+              if (viewMode === 'half-week' && setHalfWeekCellWidth) {
+                setHalfWeekCellWidth(Math.max(24, halfWeekCellWidth - 4));
+              } else if (viewMode === 'week' && setWeekCellWidth) {
                 setWeekCellWidth(Math.max(30, weekCellWidth - 6));
               } else {
                 setDayCellWidth(Math.max(22, dayCellWidth - 4));
@@ -366,11 +384,17 @@ export function GanttToolbar({
             <ZoomOut className="w-3 h-3" />
           </button>
           <span className="px-1.5 text-[10px] font-mono text-slate-300">
-            {viewMode === 'week' ? `${weekCellWidth}px` : `${dayCellWidth}px`}
+            {viewMode === 'half-week'
+              ? `${halfWeekCellWidth}px`
+              : viewMode === 'week'
+              ? `${weekCellWidth}px`
+              : `${dayCellWidth}px`}
           </span>
           <button
             onClick={() => {
-              if (viewMode === 'week' && setWeekCellWidth) {
+              if (viewMode === 'half-week' && setHalfWeekCellWidth) {
+                setHalfWeekCellWidth(Math.min(80, halfWeekCellWidth + 4));
+              } else if (viewMode === 'week' && setWeekCellWidth) {
                 setWeekCellWidth(Math.min(90, weekCellWidth + 6));
               } else {
                 setDayCellWidth(Math.min(60, dayCellWidth + 4));

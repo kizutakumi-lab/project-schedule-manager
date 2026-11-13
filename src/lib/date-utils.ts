@@ -194,6 +194,124 @@ export function getWeekBarPosition(
 }
 
 /**
+ * 1/2週（半週）単位のカレンダーデータ構造
+ * 1週（7日）を 前半（月〜水 3日）と 後半（木〜日 4日）に2分割し、週単位に比べ縦行（列数）を倍にする
+ */
+export interface CalendarHalfWeek {
+  index: number;
+  startDateStr: string; // 前半: 月曜日, 後半: 木曜日
+  endDateStr: string;   // 前半: 水曜日, 後半: 日曜日
+  label: string;        // '4/7' or '4/10'
+  subLabel: string;     // '月-水' or '木-日'
+  weekLabel: string;    // '4/7週'
+  part: 'first' | 'second';
+  year: number;
+  month: number;
+}
+
+/**
+ * 開始日〜終了日の1/2週（半週）単位配列を生成（縦行を週の倍にする）
+ */
+export function generateCalendarHalfWeeks(
+  startDateStr: string,
+  endDateStr: string
+): CalendarHalfWeek[] {
+  const weeks = generateCalendarWeeks(startDateStr, endDateStr);
+  const halfWeeks: CalendarHalfWeek[] = [];
+  let index = 0;
+
+  for (const w of weeks) {
+    const wStart = parseISO(w.startDateStr);
+    // 前半: 月〜水 (3日間)
+    const firstStart = wStart;
+    const firstEnd = addDays(wStart, 2);
+    // 後半: 木〜日 (4日間)
+    const secondStart = addDays(wStart, 3);
+    const secondEnd = addDays(wStart, 6);
+
+    halfWeeks.push({
+      index: index++,
+      startDateStr: format(firstStart, 'yyyy-MM-dd'),
+      endDateStr: format(firstEnd, 'yyyy-MM-dd'),
+      label: format(firstStart, 'M/d'),
+      subLabel: '月-水',
+      weekLabel: w.label,
+      part: 'first',
+      year: firstStart.getFullYear(),
+      month: firstStart.getMonth() + 1,
+    });
+
+    halfWeeks.push({
+      index: index++,
+      startDateStr: format(secondStart, 'yyyy-MM-dd'),
+      endDateStr: format(secondEnd, 'yyyy-MM-dd'),
+      label: format(secondStart, 'M/d'),
+      subLabel: '木-日',
+      weekLabel: w.label,
+      part: 'second',
+      year: secondStart.getFullYear(),
+      month: secondStart.getMonth() + 1,
+    });
+  }
+
+  return halfWeeks;
+}
+
+/**
+ * 1/2週（半週）単位における月グループ（ヘッダー用）
+ */
+export function groupHalfWeeksByMonth(halfWeeks: CalendarHalfWeek[]): MonthGroup[] {
+  const groups: MonthGroup[] = [];
+  let curGroup: MonthGroup | null = null;
+
+  for (const hw of halfWeeks) {
+    if (!curGroup || curGroup.year !== hw.year || curGroup.month !== hw.month) {
+      curGroup = {
+        year: hw.year,
+        month: hw.month,
+        label: `${hw.year}年${hw.month}月`,
+        daysCount: 1,
+      };
+      groups.push(curGroup);
+    } else {
+      curGroup.daysCount++;
+    }
+  }
+
+  return groups;
+}
+
+/**
+ * 1/2週（半週）単位でのタスクバー位置（leftIndex, span）を算出
+ */
+export function getHalfWeekBarPosition(
+  taskStart: string,
+  taskEnd: string,
+  halfWeeks: CalendarHalfWeek[]
+): { leftIndex: number; span: number; isVisible: boolean } {
+  if (!taskStart || !taskEnd || halfWeeks.length === 0) {
+    return { leftIndex: -1, span: 0, isVisible: false };
+  }
+
+  const first = halfWeeks[0];
+  const last = halfWeeks[halfWeeks.length - 1];
+
+  if (taskEnd < first.startDateStr || taskStart > last.endDateStr) {
+    return { leftIndex: -1, span: 0, isVisible: false };
+  }
+
+  let leftIndex = halfWeeks.findIndex(hw => taskStart <= hw.endDateStr);
+  if (leftIndex === -1) leftIndex = 0;
+
+  let rightIndex = halfWeeks.findIndex(hw => taskEnd <= hw.endDateStr);
+  if (rightIndex === -1) rightIndex = halfWeeks.length - 1;
+
+  const span = Math.max(1, rightIndex - leftIndex + 1);
+
+  return { leftIndex, span, isVisible: true };
+}
+
+/**
  * タスクの開始日・終了日からカレンダー上での位置（startIndex, spanDays）を算出（日単位用）
  */
 export function getBarPosition(

@@ -5,19 +5,23 @@ import { ScheduleItem, Todo } from '@/types';
 import {
   CalendarDay,
   CalendarWeek,
+  CalendarHalfWeek,
   getBarPosition,
   getWeekBarPosition,
+  getHalfWeekBarPosition,
   getTaskColorTheme,
 } from '@/lib/date-utils';
 import { GridBorderStrength } from './GanttCalendarHeader';
 
 interface GanttTimelineProps {
-  viewMode?: 'day' | 'week';
+  viewMode?: 'day' | 'half-week' | 'week';
   items: ScheduleItem[];
   calendarDays: CalendarDay[];
   dayCellWidth: number;
   calendarWeeks?: CalendarWeek[];
   weekCellWidth?: number;
+  calendarHalfWeeks?: CalendarHalfWeek[];
+  halfWeekCellWidth?: number;
   visibleItemIds: Set<string>;
   collapsedIds: Set<string>;
   onEditItem: (item: ScheduleItem) => void;
@@ -36,6 +40,8 @@ export function GanttTimeline({
   dayCellWidth,
   calendarWeeks = [],
   weekCellWidth = 48,
+  calendarHalfWeeks = [],
+  halfWeekCellWidth = 38,
   visibleItemIds,
   collapsedIds,
   onEditItem,
@@ -55,15 +61,25 @@ export function GanttTimeline({
   } | null>(null);
 
   if (viewMode === 'day' && calendarDays.length === 0) return null;
+  if (viewMode === 'half-week' && calendarHalfWeeks.length === 0) return null;
   if (viewMode === 'week' && calendarWeeks.length === 0) return null;
 
   const calendarStart = calendarDays[0]?.dateStr || '';
   const calendarEnd = calendarDays[calendarDays.length - 1]?.dateStr || '';
   const totalDays = calendarDays.length;
 
+  const isHalfWeekMode = viewMode === 'half-week';
   const isWeekMode = viewMode === 'week';
-  const currentCellWidth = isWeekMode ? weekCellWidth : dayCellWidth;
-  const timelineWidth = isWeekMode
+
+  const currentCellWidth = isHalfWeekMode
+    ? halfWeekCellWidth
+    : isWeekMode
+    ? weekCellWidth
+    : dayCellWidth;
+
+  const timelineWidth = isHalfWeekMode
+    ? calendarHalfWeeks.length * halfWeekCellWidth
+    : isWeekMode
     ? calendarWeeks.length * weekCellWidth
     : totalDays * dayCellWidth;
 
@@ -94,49 +110,55 @@ export function GanttTimeline({
     return tasks;
   };
 
+  // バー位置計算ヘルパー
+  const calculateBar = (start: string, end: string) => {
+    if (isHalfWeekMode) {
+      return getHalfWeekBarPosition(start, end, calendarHalfWeeks);
+    }
+    if (isWeekMode) {
+      return getWeekBarPosition(start, end, calendarWeeks);
+    }
+    return getBarPosition(start, end, calendarStart, calendarEnd, totalDays);
+  };
+
   // ドラッグ開始ハンドラ（日単位モードのみドラッグ移動有効）
   const handleBarMouseDown = (e: React.MouseEvent, item: ScheduleItem) => {
     e.stopPropagation();
-    if (isWeekMode || item.item_type !== 'task') {
-      onEditItem(item);
+    if (isWeekMode || isHalfWeekMode || item.item_type !== 'task') {
       return;
     }
 
-    const startX = e.clientX;
-    let hasMoved = false;
-    let currentDelta = 0;
-
     setActiveDrag({
       itemId: item.schedule_id,
-      startX,
+      startX: e.clientX,
       deltaDays: 0,
       hasMoved: false,
     });
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const diffX = moveEvent.clientX - startX;
-      if (Math.abs(diffX) > 4) {
-        hasMoved = true;
-      }
-      currentDelta = Math.round(diffX / dayCellWidth);
-      setActiveDrag({
-        itemId: item.schedule_id,
-        startX,
-        deltaDays: currentDelta,
-        hasMoved,
+      const diffX = moveEvent.clientX - e.clientX;
+      const rawDelta = Math.round(diffX / dayCellWidth);
+      setActiveDrag(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          deltaDays: rawDelta,
+          hasMoved: Math.abs(diffX) > 4,
+        };
       });
     };
 
-    const handleMouseUp = () => {
+    const handleMouseUp = (upEvent: MouseEvent) => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
-      setActiveDrag(null);
 
-      if (hasMoved && currentDelta !== 0 && onDragMoveItem) {
-        onDragMoveItem(item, currentDelta);
-      } else if (!hasMoved) {
-        onEditItem(item);
+      const finalDiffX = upEvent.clientX - e.clientX;
+      const finalDelta = Math.round(finalDiffX / dayCellWidth);
+
+      if (Math.abs(finalDiffX) > 4 && finalDelta !== 0 && onDragMoveItem) {
+        onDragMoveItem(item, finalDelta);
       }
+      setActiveDrag(null);
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -152,7 +174,25 @@ export function GanttTimeline({
     >
       {/* 背景グリッド縦線 */}
       <div className="absolute inset-0 flex pointer-events-none">
-        {isWeekMode ? (
+        {isHalfWeekMode ? (
+          /* 1/2週（半週）単位の背景グリッド */
+          calendarHalfWeeks.map(hw => {
+            const isCurrent = hw.startDateStr <= todayStr && todayStr <= hw.endDateStr;
+            return (
+              <div
+                key={hw.index}
+                style={{ width: `${halfWeekCellWidth}px` }}
+                className={`h-full border-r ${borderCol} shrink-0 ${
+                  isCurrent ? 'bg-blue-50/60' : hw.part === 'second' ? 'bg-slate-50/40' : ''
+                }`}
+              >
+                {isCurrent && (
+                  <div className="w-[2px] h-full bg-blue-600 mx-auto opacity-80" />
+                )}
+              </div>
+            );
+          })
+        ) : isWeekMode ? (
           /* 週単位の背景グリッド */
           calendarWeeks.map(week => {
             const isCurrentWeek = week.startDateStr <= todayStr && todayStr <= week.endDateStr;
@@ -215,9 +255,7 @@ export function GanttTimeline({
             return (
               <div key={item.schedule_id} style={rowHeightStyle} className={rowBgClass}>
                 {childTasks.map(task => {
-                  const { leftIndex, span, isVisible } = isWeekMode
-                    ? getWeekBarPosition(task.start_date, task.end_date, calendarWeeks)
-                    : getBarPosition(task.start_date, task.end_date, calendarStart, calendarEnd, totalDays);
+                  const { leftIndex, span, isVisible } = calculateBar(task.start_date, task.end_date);
 
                   if (!isVisible || leftIndex < 0) return null;
 
@@ -250,53 +288,44 @@ export function GanttTimeline({
           }
 
           // 通常行の描画
-          const { leftIndex, span, isVisible } = isWeekMode
-            ? getWeekBarPosition(item.start_date, item.end_date, calendarWeeks)
-            : getBarPosition(item.start_date, item.end_date, calendarStart, calendarEnd, totalDays);
+          const { leftIndex, span, isVisible } = calculateBar(item.start_date, item.end_date);
 
           const colorTheme = getTaskColorTheme(item.name, item.item_type);
           const isDraggingThis = activeDrag?.itemId === item.schedule_id;
           const currentLeft = (leftIndex + (isDraggingThis ? activeDrag.deltaDays : 0)) * currentCellWidth;
 
           return (
-            <div key={item.schedule_id} style={rowHeightStyle} className={rowBgClass}>
-              {/* 各日付セルのクリック領域（特定日付または特定週をクリックして作業IN日に設定） */}
-              {onCellClick && item.item_type === 'task' && !activeDrag && (
-                <div className="absolute inset-0 flex pointer-events-auto">
-                  {isWeekMode
-                    ? calendarWeeks.map(week => (
-                        <div
-                          key={week.weekIndex}
-                          style={{ width: `${weekCellWidth}px` }}
-                          onClick={() => onCellClick(item, week.startDateStr)}
-                          className="h-full shrink-0 hover:bg-blue-100/40 cursor-pointer transition-colors"
-                          title={`${item.name}: ${week.label}（${week.startDateStr}）を作業IN日に指定`}
-                        />
-                      ))
-                    : calendarDays.map(day => (
-                        <div
-                          key={day.dateStr}
-                          style={{ width: `${dayCellWidth}px` }}
-                          onClick={() => onCellClick(item, day.dateStr)}
-                          className="h-full shrink-0 hover:bg-blue-100/40 cursor-pointer transition-colors"
-                          title={`${item.name}: ${day.dateStr} を作業IN日に指定`}
-                        />
-                      ))}
-                </div>
-              )}
-
-              {/* ガントバー（ドラッグ＆ドロップで横移動可能 ＆ クリックで日程調整） */}
+            <div
+              key={item.schedule_id}
+              style={rowHeightStyle}
+              onClick={e => {
+                // セルがクリックされた場合の日程設定
+                if (onCellClick && !activeDrag?.hasMoved && !isWeekMode && !isHalfWeekMode) {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const clickX = e.clientX - rect.left;
+                  const dayIdx = Math.floor(clickX / currentCellWidth);
+                  if (dayIdx >= 0 && dayIdx < calendarDays.length) {
+                    onCellClick(item, calendarDays[dayIdx].dateStr);
+                  }
+                }
+              }}
+              className={`${rowBgClass} cursor-pointer hover:bg-blue-50/20`}
+            >
               {isVisible && leftIndex >= 0 && (
                 <div
                   style={{
                     left: `${currentLeft}px`,
                     width: `${span * currentCellWidth}px`,
                   }}
-                  onMouseDown={(e) => handleBarMouseDown(e, item)}
-                  className={`absolute top-1/2 -translate-y-1/2 h-7 rounded-xs border shadow-2xs flex items-center justify-between px-2 text-[11px] truncate transition-all group/bar z-10 ${
-                    isDraggingThis
-                      ? 'opacity-80 ring-2 ring-blue-500 z-30 cursor-grabbing'
-                      : isWeekMode
+                  onMouseDown={e => handleBarMouseDown(e, item)}
+                  onClick={e => {
+                    e.stopPropagation();
+                    if (!activeDrag?.hasMoved) {
+                      onEditItem(item);
+                    }
+                  }}
+                  className={`absolute top-1/2 -translate-y-1/2 h-7 rounded-xs border shadow-2xs select-none flex items-center justify-between px-2 text-[10px] truncate transition-shadow ${
+                    isWeekMode || isHalfWeekMode
                       ? 'cursor-pointer hover:brightness-95 hover:z-20'
                       : 'cursor-grab active:cursor-grabbing hover:brightness-95 hover:z-20'
                   } ${colorTheme.bg} ${colorTheme.border} ${colorTheme.text}`}
@@ -335,9 +364,7 @@ export function GanttTimeline({
             >
               {todoList.map(todo => {
                 const isCompleted = todo.status === 'completed';
-                const { leftIndex, span, isVisible } = isWeekMode
-                  ? getWeekBarPosition(todo.due_date, todo.due_date, calendarWeeks)
-                  : getBarPosition(todo.due_date, todo.due_date, calendarStart, calendarEnd, totalDays);
+                const { leftIndex, span, isVisible } = calculateBar(todo.due_date, todo.due_date);
 
                 if (!isVisible || leftIndex < 0) return null;
 
