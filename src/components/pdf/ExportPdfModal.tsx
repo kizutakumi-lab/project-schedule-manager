@@ -14,6 +14,7 @@ import {
   Maximize2,
   Info,
   Sparkles,
+  Sliders,
 } from 'lucide-react';
 import { Project, ScheduleItem, Todo } from '@/types';
 import {
@@ -60,6 +61,13 @@ export function ExportPdfModal({
   const [autoFitWidth, setAutoFitWidth] = useState<boolean>(true);
   // 手動ズーム倍率 (70%〜220%)
   const [zoomPercent, setZoomPercent] = useState<number>(100);
+
+  // ★重要: PDF書き出し画面側で余白を自由に調整！
+  // 'narrow': 狭い (6mm) - 端が切れず、表を最大化できる推奨値
+  // 'normal': 標準 (12mm) - バランス重視
+  // 'wide': 広め (18mm) - ゆったり
+  // 'minimal': 極小 (3mm) - 限界まで最大化
+  const [marginSize, setMarginSize] = useState<'minimal' | 'narrow' | 'normal' | 'wide'>('narrow');
 
   // 行の高さ（'auto': 用紙縦一杯に自動最大化・上下余白ゼロ | 'max': 特大80px | 'large': 大56px | 'normal': 標準38px | 'compact': 極小24px）
   const [rowDensity, setRowDensity] = useState<'auto' | 'max' | 'large' | 'normal' | 'compact'>('auto');
@@ -140,7 +148,6 @@ export function ExportPdfModal({
       }
     }
     setPdfCollapsedIds(nextCollapsed);
-    // 折りたたみ時は用紙上下の余白を完全解消するため「用紙一杯（自動）」を適用
     setRowDensity('auto');
   };
 
@@ -202,6 +209,17 @@ export function ExportPdfModal({
 
   const isLandscape = orientation === 'landscape';
 
+  // 余白ミリメートル値
+  const marginMm = useMemo(() => {
+    switch (marginSize) {
+      case 'minimal': return 3;
+      case 'narrow': return 6;
+      case 'normal': return 12;
+      case 'wide': return 18;
+      default: return 6;
+    }
+  }, [marginSize]);
+
   // 左側幅（工程名列・担当列・営業日列）
   const leftNameWidth = isLandscape ? 200 : 155;
   const leftAssigneeWidth = isLandscape ? 60 : 50;
@@ -234,14 +252,16 @@ export function ExportPdfModal({
     return Math.max(1, count);
   }, [visibleItems.length, showTodos, todos]);
 
-  // ★重要: 用紙縦一杯フィット（上下の余白を完全ゼロにし、用紙全体にドーンと最大化！）
+  // ★重要: 余白（marginMm）を考慮した用紙縦一杯フィットの正確な計算
+  // A4縦: 全高297mm ≒ 約1123px / A4横: 全高210mm ≒ 約794px
   const autoRowHeight = useMemo(() => {
-    // A4縦: 利用可能高さ約940px / A4横: 約620px
-    const availablePrintHeight = isLandscape ? 620 : 940;
+    const paperHeightPx = isLandscape ? 794 : 1123;
+    const marginPx = Math.round(marginMm * 2 * 3.78); // 上下余白合計px
+    const headerFooterPx = 135; // 表題・案件情報・表ヘッダー・フッター
+    const availablePrintHeight = Math.max(250, paperHeightPx - marginPx - headerFooterPx);
     const computed = Math.floor(availablePrintHeight / totalVisibleRowCount);
-    // 最小24px、最大130px
     return Math.min(130, Math.max(24, computed));
-  }, [isLandscape, totalVisibleRowCount]);
+  }, [isLandscape, marginMm, totalVisibleRowCount]);
 
   // 実際の行の高さ（px）
   const currentRowHeight = useMemo(() => {
@@ -252,30 +272,30 @@ export function ExportPdfModal({
     return 24;
   }, [rowDensity, autoRowHeight]);
 
-  // 行の高さに応じたバーの太さとフォントサイズ（行が広いときは文字もバーも大きく！）
+  // 行の高さに応じたバーの太さとフォントサイズ
   const rowStyleConfig = useMemo(() => {
     const h = currentRowHeight;
-    if (h >= 90) {
+    if (h >= 85) {
       return {
         heightPx: h,
         fontSize: 'text-sm font-semibold',
-        barHeight: Math.min(54, Math.round(h * 0.58)),
+        barHeight: Math.min(52, Math.round(h * 0.58)),
         titleSize: 'text-xs font-bold',
         subSize: 'text-[11px]',
         py: 'py-2',
       };
     }
-    if (h >= 60) {
+    if (h >= 58) {
       return {
         heightPx: h,
         fontSize: 'text-xs font-semibold',
-        barHeight: Math.min(42, Math.round(h * 0.6)),
+        barHeight: Math.min(40, Math.round(h * 0.6)),
         titleSize: 'text-[11px] font-bold',
         subSize: 'text-[9.5px]',
         py: 'py-1.5',
       };
     }
-    if (h >= 45) {
+    if (h >= 44) {
       return {
         heightPx: h,
         fontSize: 'text-[11px]',
@@ -376,12 +396,12 @@ export function ExportPdfModal({
 
   return (
     <div className="pdf-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-xs p-4">
-      {/* 印刷ダイアログ用の動的@page & 印刷完全隔離スタイル（transform不要・用紙100%全幅＆縦一杯ストレッチ） */}
+      {/* 印刷ダイアログ用の動的@page & 印刷完全隔離スタイル（自前パディングによりブラウザ設定に関わらず端が絶対に切れない！） */}
       <style dangerouslySetInnerHTML={{ __html: `
         @media print {
           @page {
             size: ${isLandscape ? 'A4 landscape' : 'A4 portrait'} !important;
-            margin: 6mm !important;
+            margin: 0mm !important;
           }
           * {
             -webkit-print-color-adjust: exact !important;
@@ -393,9 +413,9 @@ export function ExportPdfModal({
             color: #000000 !important;
             margin: 0 !important;
             padding: 0 !important;
-            width: 100% !important;
-            height: 100% !important;
-            overflow: visible !important;
+            width: ${isLandscape ? '297mm' : '210mm'} !important;
+            height: ${isLandscape ? '210mm' : '297mm'} !important;
+            overflow: hidden !important;
           }
           .no-print {
             display: none !important;
@@ -408,7 +428,7 @@ export function ExportPdfModal({
             margin: 0 !important;
             display: block !important;
             width: 100% !important;
-            height: auto !important;
+            height: 100% !important;
             overflow: visible !important;
           }
           .pdf-modal-container {
@@ -417,7 +437,7 @@ export function ExportPdfModal({
             max-width: none !important;
             max-height: none !important;
             width: 100% !important;
-            height: auto !important;
+            height: 100% !important;
             padding: 0 !important;
             margin: 0 !important;
             background: #ffffff !important;
@@ -431,18 +451,21 @@ export function ExportPdfModal({
             overflow: visible !important;
             display: block !important;
             width: 100% !important;
+            height: 100% !important;
           }
           #printable-schedule {
             display: block !important;
-            width: 100% !important;
-            max-width: 100% !important;
-            min-width: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
+            box-sizing: border-box !important;
+            width: ${isLandscape ? '297mm' : '210mm'} !important;
+            height: ${isLandscape ? '210mm' : '297mm'} !important;
+            max-width: ${isLandscape ? '297mm' : '210mm'} !important;
+            padding: ${marginMm}mm !important;
+            margin: 0 auto !important;
             border: none !important;
             box-shadow: none !important;
             background: #ffffff !important;
             transform: none !important;
+            overflow: hidden !important;
           }
           .timeline-stretch-container {
             width: 100% !important;
@@ -464,15 +487,18 @@ export function ExportPdfModal({
               <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
                 {timeUnit === 'half-week' ? '1/2週表示' : timeUnit === 'week' ? '週単位' : '日単位'}
               </span>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
+                余白: {marginMm}mm
+              </span>
               {rowDensity === 'auto' && (
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 flex items-center space-x-1">
                   <Sparkles className="w-3 h-3 text-amber-600" />
-                  <span>用紙一杯に特大表示中（上下・右余白ゼロ）</span>
+                  <span>用紙縦一杯フィット中</span>
                 </span>
               )}
             </h2>
             <p className="text-[11px] text-slate-500">
-              クライアント提出用資料（用紙1枚に全幅・縦一杯ストレッチ配置で余白を最小化）
+              クライアント提出用資料（余白調整機能・用紙1枚ストレッチ配置・端切れ防止）
             </p>
           </div>
           <button
@@ -585,6 +611,60 @@ export function ExportPdfModal({
               </div>
             )}
 
+            {/* ★新設: 用紙余白調整（PDF画面側で自由に変更可能） */}
+            <div className="flex items-center space-x-1 bg-white px-2 py-1 rounded-md border border-slate-300 shadow-2xs">
+              <Sliders className="w-3.5 h-3.5 text-indigo-600" />
+              <span className="text-slate-700 font-bold text-[11px]">用紙余白:</span>
+              <button
+                type="button"
+                onClick={() => setMarginSize('narrow')}
+                className={`px-1.5 py-0.5 rounded-xs text-[11px] cursor-pointer font-bold transition-colors ${
+                  marginSize === 'narrow'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+                title="狭い (6mm)：端が絶対に切れず、表を最大化できる最適値（推奨）"
+              >
+                狭い(6mm・推奨)
+              </button>
+              <button
+                type="button"
+                onClick={() => setMarginSize('normal')}
+                className={`px-1.5 py-0.5 rounded-xs text-[11px] cursor-pointer font-semibold transition-colors ${
+                  marginSize === 'normal'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+                title="標準 (12mm)：落ち着いたバランスの良い余白"
+              >
+                標準(12mm)
+              </button>
+              <button
+                type="button"
+                onClick={() => setMarginSize('wide')}
+                className={`px-1.5 py-0.5 rounded-xs text-[11px] cursor-pointer font-semibold transition-colors ${
+                  marginSize === 'wide'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+                title="広め (18mm)：メモ欄や余白を多く取りたい場合"
+              >
+                広め(18mm)
+              </button>
+              <button
+                type="button"
+                onClick={() => setMarginSize('minimal')}
+                className={`px-1.5 py-0.5 rounded-xs text-[11px] cursor-pointer font-semibold transition-colors ${
+                  marginSize === 'minimal'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+                title="極小 (3mm)：限界まで表を大きくしたい場合"
+              >
+                極小(3mm)
+              </button>
+            </div>
+
             {/* 階層折りたたみ制御 */}
             <div className="flex items-center space-x-1 bg-white px-2 py-1 rounded-md border border-slate-300 shadow-2xs">
               <FolderTree className="w-3.5 h-3.5 text-slate-600" />
@@ -592,7 +672,7 @@ export function ExportPdfModal({
                 type="button"
                 onClick={handleCollapseToGroups}
                 className="px-2 py-0.5 rounded-xs text-[11px] font-bold bg-amber-500 hover:bg-amber-600 text-white cursor-pointer transition-colors shadow-2xs"
-                title="小項目をすべて折りたたみ、中項目・大項目を1行ずつコンパクトに表示します（行内には子タスクが横一列に並びます）"
+                title="小項目をすべて折りたたみ、中項目・大項目を1行ずつコンパクトに表示します"
               >
                 中項目で折りたたみ
               </button>
@@ -687,7 +767,7 @@ export function ExportPdfModal({
                 }`}
                 title="用紙の右端までピッタリ100%均等ストレッチ（右余白ゼロ・推奨）"
               >
-                用紙全幅フィット（推奨）
+                全幅フィット（推奨）
               </button>
 
               <div className="flex items-center space-x-0.5 pl-1 border-l border-slate-200">
@@ -751,21 +831,15 @@ export function ExportPdfModal({
           </div>
         </div>
 
-        {/* 印刷のヒント案内バー */}
-        <div className="no-print px-6 py-1.5 bg-amber-50 border-b border-amber-200 text-amber-900 text-[11px] flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <Info className="w-4 h-4 text-amber-700 shrink-0" />
-            <span>
-              <strong>最大限大きく1枚に収めるコツ:</strong> ブラウザの印刷画面で<strong>「余白: なし」または「最小」</strong>にし、<strong>「背景のグラフィック」にチェック</strong>を入れて保存してください。用紙いっぱい余白最小限で綺麗に出力されます。
-            </span>
-          </div>
-        </div>
-
         {/* 印刷・プレビュー対象領域 */}
-        <div className="pdf-modal-scroll-area flex-1 overflow-auto p-4 bg-slate-200/60 print:p-0 print:bg-white print:overflow-visible">
+        <div className="pdf-modal-scroll-area flex-1 overflow-auto p-4 bg-slate-200/60 print:p-0 print:bg-white print:overflow-visible flex justify-center">
           <div
             id="printable-schedule"
-            className="bg-white p-6 rounded-lg shadow-sm border border-slate-300 mx-auto text-xs text-slate-800 print:border-none print:shadow-none print:p-0 print:max-w-none w-full min-w-0"
+            style={{
+              padding: `${marginMm}mm`,
+              maxWidth: isLandscape ? '1120px' : '820px',
+            }}
+            className="bg-white rounded-lg shadow-sm border border-slate-300 text-xs text-slate-800 print:border-none print:shadow-none print:max-w-none w-full min-w-0"
           >
             {/* 提出用ヘッダー */}
             <div className="flex items-start justify-between border-b-2 border-slate-900 pb-2 mb-2">
